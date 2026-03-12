@@ -1,54 +1,197 @@
 export const COMMAND_TEMPLATES = [
   {
-    id: "openclaw-gateway",
-    name: "OpenClaw Gateway",
-    group: "ai-proxy",
-    command: "openclaw",
-    args: "gateway start",
-    cwd: "",
-    envText: "OPENCLAW_TOKEN=",
-    description: {
-      "zh-CN": "快速创建 OpenClaw 网关启动命令。",
-      "en-US": "Quickly create an OpenClaw gateway command."
+    "id": "node-dev",
+    "name": "Node.js Dev",
+    "group": "node",
+    "command": "npm",
+    "args": "run dev",
+    "cwd": "",
+    "envText": "NODE_ENV=development",
+    "description": {
+      "zh-CN": "Node.js开发服务器",
+      "en-US": "Node.js dev server"
     }
   },
   {
-    id: "cli-proxy-api",
-    name: "CLI Proxy API",
-    group: "ai-proxy",
-    command: "cli-proxy-api.exe",
-    args: "",
-    cwd: "",
-    envText: "",
-    description: {
-      "zh-CN": "适合本地代理可执行文件。",
-      "en-US": "Good for a local proxy executable."
+    "id": "node-start",
+    "name": "Node.js Start",
+    "group": "node",
+    "command": "node",
+    "args": "index.js",
+    "cwd": "",
+    "envText": "NODE_ENV=development",
+    "description": {
+      "zh-CN": "Node.js启动入口",
+      "en-US": "Node.js main entry"
     }
   },
   {
-    id: "npm-dev",
-    name: "npm dev server",
-    group: "dev",
-    command: "npm",
-    args: "run dev",
-    cwd: "",
-    envText: "NODE_ENV=development",
-    description: {
-      "zh-CN": "前端或 Node 开发服务的常用模板。",
-      "en-US": "Common template for frontend or Node dev servers."
+    "id": "python-flask",
+    "name": "Flask Server",
+    "group": "python",
+    "command": "python",
+    "args": "-m flask run",
+    "cwd": "",
+    "envText": "FLASK_APP=app.py\nFLASK_ENV=development",
+    "description": {
+      "zh-CN": "Flask开发服务器",
+      "en-US": "Flask dev server"
     }
   },
   {
-    id: "python-service",
-    name: "Python Service",
-    group: "services",
-    command: "python",
-    args: "app.py",
-    cwd: "",
-    envText: "PYTHONUNBUFFERED=1",
-    description: {
-      "zh-CN": "适合长期驻留的 Python 脚本或 API。",
-      "en-US": "Useful for long-running Python scripts or APIs."
+    "id": "python-fastapi",
+    "name": "FastAPI",
+    "group": "python",
+    "command": "uvicorn",
+    "args": "main:app --reload",
+    "cwd": "",
+    "envText": "",
+    "description": {
+      "zh-CN": "FastAPI开发服务器",
+      "en-US": "FastAPI dev server"
+    }
+  },
+  {
+    "id": "python-django",
+    "name": "Django",
+    "group": "python",
+    "command": "python",
+    "args": "manage.py runserver",
+    "cwd": "",
+    "envText": "",
+    "description": {
+      "zh-CN": "Django开发服务器",
+      "en-US": "Django dev server"
+    }
+  },
+  {
+    "id": "java-spring",
+    "name": "Spring Boot",
+    "group": "java",
+    "command": "./mvnw",
+    "args": "spring-boot:run",
+    "cwd": "",
+    "envText": "SPRING_PROFILES_ACTIVE=dev",
+    "description": {
+      "zh-CN": "Spring Boot启动",
+      "en-US": "Spring Boot startup"
+    }
+  },
+  {
+    "id": "go-run",
+    "name": "Go Run",
+    "group": "go",
+    "command": "go",
+    "args": "run .",
+    "cwd": "",
+    "envText": "",
+    "description": {
+      "zh-CN": "Go运行",
+      "en-US": "Go run main"
+    }
+  },
+  {
+    "id": "rust-run",
+    "name": "Cargo Run",
+    "group": "rust",
+    "command": "cargo",
+    "args": "run",
+    "cwd": "",
+    "envText": "",
+    "description": {
+      "zh-CN": "Cargo运行",
+      "en-US": "Cargo run"
+    }
+  },
+  {
+    "id": "docker-up",
+    "name": "Docker Compose Up",
+    "group": "docker",
+    "command": "docker-compose",
+    "args": "up -d",
+    "cwd": "",
+    "envText": "",
+    "description": {
+      "zh-CN": "Docker Compose启动",
+      "en-US": "Docker Compose up"
+    }
+  },
+  {
+    "id": "docker-dev",
+    "name": "Docker Dev",
+    "group": "docker",
+    "command": "docker-compose",
+    "args": "up -d --build",
+    "cwd": "",
+    "envText": "",
+    "description": {
+      "zh-CN": "Docker开发模式",
+      "en-US": "Docker dev mode"
+    }
+  },
+  {
+    "id": "vite-dev",
+    "name": "Vite Dev",
+    "group": "frontend",
+    "command": "npm",
+    "args": "run dev",
+    "cwd": "",
+    "envText": "",
+    "description": {
+      "zh-CN": "Vite开发服务器",
+      "en-US": "Vite dev server"
+    }
+  },
+  {
+    "id": "next-dev",
+    "name": "Next.js Dev",
+    "group": "frontend",
+    "command": "npm",
+    "args": "run dev",
+    "cwd": "",
+    "envText": "",
+    "description": {
+      "zh-CN": "Next.js开发服务器",
+      "en-US": "Next.js dev server"
+    }
+  },
+  {
+    "id": "mysql",
+    "name": "MySQL",
+    "group": "database",
+    "command": "docker",
+    "args": "run -d -p 3306:3306 -e MYSQL_ROOT_PASSWORD=root mysql:latest",
+    "cwd": "",
+    "envText": "",
+    "description": {
+      "zh-CN": "MySQL容器",
+      "en-US": "MySQL container"
+    }
+  },
+  {
+    "id": "redis",
+    "name": "Redis",
+    "group": "database",
+    "command": "docker",
+    "args": "run -d -p 6379:6379 redis:alpine",
+    "cwd": "",
+    "envText": "",
+    "description": {
+      "zh-CN": "Redis容器",
+      "en-US": "Redis container"
+    }
+  },
+  {
+    "id": "postgres",
+    "name": "PostgreSQL",
+    "group": "database",
+    "command": "docker",
+    "args": "run -d -p 5432:5432 -e POSTGRES_PASSWORD=postgres postgres:latest",
+    "cwd": "",
+    "envText": "",
+    "description": {
+      "zh-CN": "PostgreSQL容器",
+      "en-US": "PostgreSQL container"
     }
   }
-];
+]
