@@ -34,6 +34,7 @@ const {
   loadCommands,
   saveCommands,
   updateCommand,
+  loadRuntime,
   saveRuntime,
   getLogPath,
   clearLogFile,

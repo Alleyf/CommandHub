@@ -1099,7 +1099,6 @@ function App() {
             </div>
           </section>
         )}
-        )}
       </main>
 
       <div className={`modal-backdrop ${drawerOpen ? "open" : ""}`} onClick={() => setDrawerOpen(false)}>
