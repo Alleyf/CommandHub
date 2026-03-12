@@ -32,16 +32,6 @@ flowchart LR
     C --> F["Apps / Background / Windows"]
 ```
 
-## 品牌资源
-
-项目已经内置完整品牌图标资源，可同时用于页面、窗口、托盘和打包图标。
-
-| 资源 | 路径 | 用途 |
-| --- | --- | --- |
-| SVG 主图标 | `electron/assets/icon.svg` | README、页面品牌展示 |
-| Windows 图标 | `electron/assets/icon.ico` | Electron 窗口与安装包 |
-| PNG 多尺寸 | `electron/assets/icon-16.png` ~ `icon-256.png` | 跨平台图标资源 |
-| 托盘图标 | `electron/assets/tray-icon.png` | 系统托盘 |
 
 ## 主要功能
 
@@ -157,8 +147,6 @@ sequenceDiagram
 
 ## 当前亮点
 
-- 左侧品牌区已经接入项目 logo，风格与桌面端界面统一
-- 运行时窗口图标、托盘图标、打包图标已经统一为同一套品牌资源
 - 进程清单已经支持分类分组、同程序合并、匹配高亮和筛选
 - Windows 下命令启动路径已经针对“隐藏终端窗口”做过加强处理
 

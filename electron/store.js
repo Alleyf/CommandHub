@@ -71,7 +71,16 @@ function createStore(getUserDataPath) {
   }
 
   function clearLogFile(logPath) {
-    fs.writeFileSync(logPath, "", "utf8");
+    try {
+      fs.writeFileSync(logPath, "", "utf8");
+      return true;
+    } catch (error) {
+      if (error.code === "EBUSY") {
+        console.warn(`Could not clear log file (busy): ${logPath}`);
+        return false;
+      }
+      throw error;
+    }
   }
 
   function readLogTail(logPath) {

@@ -1,10 +1,12 @@
 const { app, BrowserWindow, dialog, ipcMain, Menu, Tray, nativeImage, nativeTheme, shell } = require("electron");
 const path = require("node:path");
 const fs = require("node:fs");
-const { execFileSync, spawn } = require("node:child_process");
+const { execFile, execFileSync, spawn } = require("node:child_process");
+const util = require("node:util");
+const execFileAsync = util.promisify(execFile);
 
 const { createStore } = require("./store");
-const { killSystemProcess, listMatchedSystemProcesses } = require("./system-processes");
+const { killSystemProcess, listMatchedSystemProcesses, getWindowsPowerShellPath } = require("./system-processes");
 
 const isDev = !app.isPackaged;
 const processes = new Map();
@@ -99,11 +101,13 @@ function nowIso() {
 }
 
 function pidExists(pid) {
+  const numericPid = Number(pid);
+  if (!numericPid || Number.isNaN(numericPid)) return false;
   try {
-    process.kill(pid, 0);
+    process.kill(numericPid, 0);
     return true;
-  } catch {
-    return false;
+  } catch (error) {
+    return error.code === "EPERM";
   }
 }
 
@@ -133,30 +137,25 @@ function quoteWindowsCommand(value) {
 function getWindowsHiddenLaunchScript(command, logPath, logMode) {
   const commandLine = [quoteWindowsCommand(command.command), command.args || ""].filter(Boolean).join(" ").trim();
   const envScript = Object.entries(splitEnv(command.env))
-    .map(([key, value]) => `$psi.Environment['${escapePowerShellString(key)}'] = '${escapePowerShellString(value)}'`)
+    .map(([key, value]) => `$env:${escapePowerShellString(key)} = '${escapePowerShellString(value)}'`)
     .join("\n");
   const redirect = logMode === "append" ? ">>" : ">";
+
+  const innerCmd = `chcp 65001>nul & ${commandLine} 1${redirect}"${logPath}" 2>&1`;
 
   return `
 $ErrorActionPreference = 'Stop'
 [Console]::OutputEncoding = [System.Text.Encoding]::UTF8
-$psi = New-Object System.Diagnostics.ProcessStartInfo
-$psi.FileName = 'cmd.exe'
-$psi.Arguments = '/d /s /c "chcp 65001>nul & ${escapePowerShellString(commandLine)} 1${redirect}\\"${escapePowerShellString(logPath)}\\" 2>&1"'
-$psi.UseShellExecute = $false
-$psi.CreateNoWindow = $true
-$psi.WindowStyle = [System.Diagnostics.ProcessWindowStyle]::Hidden
-${command.cwd ? `$psi.WorkingDirectory = '${escapePowerShellString(command.cwd)}'` : ""}
 ${envScript}
-$process = [System.Diagnostics.Process]::Start($psi)
-$process.Id
+$process = Start-Process -FilePath "cmd.exe" -ArgumentList @('/d', '/c', '${escapePowerShellString(innerCmd)}') -WorkingDirectory '${escapePowerShellString(command.cwd || ".")}' -WindowStyle Hidden -PassThru
+"PID:$($process.Id)"
 `.trim();
 }
 
 function getShellCommand(command, args) {
   const joined = [command, args].filter(Boolean).join(" ").trim();
   if (process.platform === "win32") {
-    return { file: "cmd.exe", args: ["/d", "/s", "/c", `chcp 65001>nul & ${joined}`] };
+    return { file: "cmd.exe", args: ["/d", "/c", `chcp 65001>nul & ${joined}`] };
   }
   return { file: "/bin/sh", args: ["-lc", joined] };
 }
@@ -222,25 +221,24 @@ function ensureTray() {
   refreshTrayMenu();
 }
 
-function sleepMs(ms) {
-  Atomics.wait(new Int32Array(new SharedArrayBuffer(4)), 0, 0, ms);
+async function sleepMs(ms) {
+  return new Promise((resolve) => setTimeout(resolve, ms));
 }
 
-function waitForPidExit(pid, timeoutMs = 5000) {
+async function waitForPidExit(pid, timeoutMs = 5000) {
   const deadline = Date.now() + timeoutMs;
   while (Date.now() < deadline) {
     if (!pidExists(pid)) return true;
-    sleepMs(100);
+    await sleepMs(100);
   }
   return !pidExists(pid);
 }
 
-function terminateProcess(pid) {
+async function terminateProcess(pid) {
   if (!pid) return;
   if (process.platform === "win32") {
     try {
-      execFileSync("taskkill", ["/PID", String(pid), "/T", "/F"], {
-        stdio: "ignore",
+      await execFileAsync("taskkill", ["/PID", String(pid), "/T", "/F"], {
         windowsHide: true
       });
     } catch {}
@@ -277,11 +275,13 @@ function watchProcesses() {
     for (const [id, info] of Object.entries(runtime)) {
       const managed = processes.get(id);
       const command = managed?.command || commandsById.get(id);
-      const childRunning = managed?.child ? managed.child.exitCode === null : false;
-      if (info?.pid && pidExists(info.pid) && childRunning) continue;
-      if (info?.pid && pidExists(info.pid) && !managed) continue;
+      
+      const isAlive = info?.pid && pidExists(info.pid);
+      const isChildAlive = managed?.child ? managed.child.exitCode === null : true;
+      
+      if (isAlive && isChildAlive) continue;
 
-      const exitCode = managed?.child?.exitCode;
+      const exitCode = managed?.child?.exitCode ?? null;
 
       try {
         managed?.stream?.end();
@@ -294,13 +294,15 @@ function watchProcesses() {
         lastExitCode: exitCode,
         lastStoppedAt: nowIso(),
         updatedAt: nowIso(),
-        lastState: exitCode === 0 ? "stopped" : "error"
+        lastState: (exitCode === 0 || exitCode === null || exitCode === undefined) ? "stopped" : "error"
       }));
       changed = true;
+      refreshTrayMenu();
+      updateRenderer();
 
       if (command?.autoRestart) {
-        setTimeout(() => {
-          startCommand(command);
+        setTimeout(async () => {
+          await startCommand(command);
           updateRenderer();
         }, 1200);
       }
@@ -313,7 +315,22 @@ function watchProcesses() {
   }, 1000);
 }
 
-function startCommand(command) {
+function extractPid(text) {
+  const match = String(text || "").match(/PID:(\d+)/);
+  if (match) {
+    return Number(match[1]);
+  }
+  const lines = String(text || "").split(/\r?\n/).map((line) => line.trim()).filter(Boolean);
+  for (let index = lines.length - 1; index >= 0; index -= 1) {
+    const line = lines[index];
+    if (/^\d+$/.test(line)) {
+      return Number(line);
+    }
+  }
+  return NaN;
+}
+
+async function startCommand(command) {
   const currentRuntime = loadRuntime();
   const settings = loadSettings();
   const existingRuntime = currentRuntime[command.id];
@@ -330,19 +347,46 @@ function startCommand(command) {
   const logPath = getLogPath(command.id);
   const logMode = settings.logMode === "append" ? "append" : "overwrite";
   if (logMode === "overwrite") {
-    clearLogFile(logPath);
+    let cleared = false;
+    for (let attempt = 0; attempt < 5; attempt += 1) {
+      if (clearLogFile(logPath)) {
+        cleared = true;
+        break;
+      }
+      await sleepMs(300);
+    }
+    if (!cleared) {
+      console.warn(`Giving up on clearing log file for ${command.id} after 5 attempts.`);
+      return createStatus({
+        state: "error",
+        message: "Log file is busy and could not be cleared. Please try again in a few seconds.",
+        logPath
+      });
+    }
   }
   let child = null;
   let stream = null;
   let runtimePid = null;
 
   if (process.platform === "win32") {
-    const script = getWindowsHiddenLaunchScript(command, logPath, logMode);
-    const output = execFileSync(getWindowsPowerShellPath(), ["-NoProfile", "-EncodedCommand", encodePowerShellCommand(script)], {
-      encoding: "utf8",
-      windowsHide: true
-    });
-    runtimePid = Number(String(output).trim().split(/\r?\n/).filter(Boolean).at(-1));
+    try {
+      const script = getWindowsHiddenLaunchScript(command, logPath, logMode);
+      const { stdout } = await execFileAsync(getWindowsPowerShellPath(), ["-NoProfile", "-EncodedCommand", encodePowerShellCommand(script)], {
+        encoding: "utf8",
+        windowsHide: true
+      });
+      runtimePid = extractPid(stdout);
+      if (Number.isNaN(runtimePid)) {
+        throw new Error(`Could not determine process PID from PowerShell output: ${stdout}`);
+      }
+    } catch (error) {
+      console.error(`Failed to start command ${command.id}:`, error);
+      return createStatus({
+        state: "error",
+        message: String(error.message || error),
+        logPath
+      });
+    }
   } else {
     stream = fs.createWriteStream(logPath, { flags: logMode === "append" ? "a" : "w" });
     const shellCommand = getShellCommand(command.command, command.args);
@@ -387,15 +431,20 @@ function startCommand(command) {
   return status;
 }
 
-function stopCommand(id) {
+async function stopCommand(id) {
   const runtime = loadRuntime();
   const data = runtime[id];
   if (!data?.pid) {
     return createStatus({ state: "stopped", message: "Not running" });
   }
 
-  terminateProcess(data.pid);
-  waitForPidExit(data.pid);
+  await terminateProcess(data.pid);
+  await waitForPidExit(data.pid);
+
+  if (process.platform === "win32") {
+    await sleepMs(400);
+  }
+
   delete runtime[id];
   saveRuntime(runtime);
 
@@ -437,8 +486,9 @@ function getStatuses() {
         logPath: info.logPath
       });
     } else {
+      const state = command.lastState === "running" ? "stopped" : (command.lastState || "stopped");
       statuses[command.id] = createStatus({
-        state: command.lastState === "error" ? "error" : "stopped",
+        state: state === "error" ? "error" : "stopped",
         message: "Idle",
         stoppedAt: command.lastStoppedAt || null,
         lastExitCode: command.lastExitCode ?? null,
@@ -449,21 +499,21 @@ function getStatuses() {
   return statuses;
 }
 
-function startAllCommands(group) {
+async function startAllCommands(group) {
   const commands = loadCommands().filter((item) => !group || item.group === group);
   const statuses = {};
   for (const command of commands) {
-    statuses[command.id] = startCommand(command);
+    statuses[command.id] = await startCommand(command);
   }
   updateRenderer();
   return statuses;
 }
 
-function stopAllCommands(group) {
+async function stopAllCommands(group) {
   const commands = loadCommands().filter((item) => !group || item.group === group);
   const statuses = {};
   for (const command of commands) {
-    statuses[command.id] = stopCommand(command.id);
+    statuses[command.id] = await stopCommand(command.id);
   }
   updateRenderer();
   return statuses;
@@ -535,7 +585,7 @@ safeHandle("app:save-command", async (_event, payload) => {
   return { ok: true };
 });
 safeHandle("app:delete-command", async (_event, id) => {
-  stopCommand(id);
+  await stopCommand(id);
   const commands = loadCommands().filter((item) => item.id !== id);
   saveCommands(commands);
   refreshTrayMenu();
@@ -543,23 +593,23 @@ safeHandle("app:delete-command", async (_event, id) => {
   return { ok: true };
 });
 safeHandle("app:start-command", async (_event, command) => {
-  const status = startCommand(command);
+  const status = await startCommand(command);
   updateRenderer();
   return status;
 });
 safeHandle("app:stop-command", async (_event, id) => {
-  const status = stopCommand(id);
+  const status = await stopCommand(id);
   updateRenderer();
   return status;
 });
 safeHandle("app:restart-command", async (_event, command) => {
-  stopCommand(command.id);
-  const status = startCommand(command);
+  await stopCommand(command.id);
+  const status = await startCommand(command);
   updateRenderer();
   return status;
 });
-safeHandle("app:start-all", async (_event, group) => startAllCommands(group));
-safeHandle("app:stop-all", async (_event, group) => stopAllCommands(group));
+safeHandle("app:start-all", async (_event, group) => await startAllCommands(group));
+safeHandle("app:stop-all", async (_event, group) => await stopAllCommands(group));
 safeHandle("app:get-log-tail", async (_event, logPath) => readLogTail(logPath));
 safeHandle("app:clear-log", async (_event, logPath) => {
   clearLogFile(logPath);
@@ -623,7 +673,7 @@ safeHandle("app:import-commands", async () => {
   return { ok: true, filePath: result.filePaths[0], count: imported.length, total: merged.size };
 });
 safeHandle("app:list-system-processes", async () => listMatchedSystemProcesses(loadCommands(), getStatuses()));
-safeHandle("app:kill-system-process", async (_event, pid) => killSystemProcess(pid, terminateProcess));
+safeHandle("app:kill-system-process", async (_event, pid) => await killSystemProcess(pid, terminateProcess));
 
 app.whenReady().then(async () => {
   hydrateRuntime();

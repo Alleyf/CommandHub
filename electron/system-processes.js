@@ -314,13 +314,14 @@ function listMatchedSystemProcesses(commands, statuses) {
     });
 }
 
-function killSystemProcess(pid, terminateProcess) {
+async function killSystemProcess(pid, terminateProcess) {
   if (!pid) return { ok: false };
-  terminateProcess(pid);
+  await terminateProcess(pid);
   return { ok: true };
 }
 
 module.exports = {
   listMatchedSystemProcesses,
-  killSystemProcess
+  killSystemProcess,
+  getWindowsPowerShellPath
 };
