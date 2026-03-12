@@ -13,7 +13,7 @@
     "build:web": "vite build",
     "build": "npm run build:web",
     "dist": "npm run build && electron-builder",
-    "release": "electron-builder --publish always"
+    "release": "npm run build && electron-builder --publish always"
   },
   "build": {
     "appId": "com.commandhub.app",
@@ -26,7 +26,11 @@
     "files": [
       "dist/**/*",
       "electron/**/*",
-      "package.json"
+      "package.json",
+      "!**/node_modules/**/*",
+      "!**/*.{ts,tsx,map,md}",
+      "!scripts/**/*",
+      "!vite.config.js"
     ],
     "directories": {
       "output": "release",
@@ -47,7 +51,9 @@
     "nsis": {
       "oneClick": false,
       "allowToChangeInstallationDirectory": true,
-      "shortcutName": "CommandHub"
+      "shortcutName": "CommandHub",
+      "deleteAppDataOnUninstall": true,
+      "include": "scripts/installer.nsh"
     },
     "linux": {
       "icon": "electron/assets/icon-256.png",
