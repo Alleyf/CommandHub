@@ -27,6 +27,7 @@
       "dist/**/*",
       "electron/**/*",
       "package.json",
+      "!**/node_modules/**/*",
       "!**/*.{ts,tsx,map,md}",
       "!scripts/**/*",
       "!vite.config.js"
@@ -69,6 +70,9 @@
         "dmg"
       ]
     }
+  },
+  "dependencies": {
+    "electron-updater": "^6.3.0"
   },
   "devDependencies": {
     "@vitejs/plugin-react": "^5.0.0",
