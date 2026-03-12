@@ -11,31 +11,61 @@
     "start": "concurrently -k \"npm:dev\" \"npm:electron:dev\"",
     "electron:dev": "wait-on http://127.0.0.1:5173 && electron .",
     "build:web": "vite build",
-    "build": "npm run build:web"
+    "build": "npm run build:web",
+    "dist": "npm run build && electron-builder",
+    "release": "electron-builder --publish always"
   },
   "build": {
+    "appId": "com.commandhub.app",
+    "productName": "CommandHub",
+    "publish": {
+      "provider": "github"
+    },
+    "compression": "maximum",
+    "afterPack": "scripts/clean-locales.js",
+    "files": [
+      "dist/**/*",
+      "electron/**/*",
+      "package.json"
+    ],
     "directories": {
+      "output": "release",
       "buildResources": "electron/assets"
     },
     "icon": "electron/assets/icon.ico",
     "win": {
+      "target": [
+        {
+          "target": "nsis",
+          "arch": [
+            "x64"
+          ]
+        }
+      ],
       "icon": "electron/assets/icon.ico"
     },
+    "nsis": {
+      "oneClick": false,
+      "allowToChangeInstallationDirectory": true,
+      "shortcutName": "CommandHub"
+    },
     "linux": {
-      "icon": "electron/assets/icon-256.png"
+      "icon": "electron/assets/icon-256.png",
+      "target": ["AppImage"]
     },
     "mac": {
-      "icon": "electron/assets/icon-256.png"
+      "icon": "electron/assets/icon-256.png",
+      "target": ["dmg"]
     }
   },
-  "dependencies": {
+  "dependencies": {},
+  "devDependencies": {
     "electron": "^36.0.0",
     "react": "^19.1.0",
-    "react-dom": "^19.1.0"
-  },
-  "devDependencies": {
+    "react-dom": "^19.1.0",
     "@vitejs/plugin-react": "^5.0.0",
     "concurrently": "^9.2.0",
+    "electron-builder": "^26.8.1",
     "vite": "^7.0.0",
     "wait-on": "^8.0.3"
   }
