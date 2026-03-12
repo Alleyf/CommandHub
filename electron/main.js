@@ -34,7 +34,7 @@ const {
   loadCommands,
   saveCommands,
   updateCommand,
-  loadRuntime,
+  loadRuntime,saveRuntime,loadUsageStats,getTopCommands,recordUsage,
   saveRuntime,
   getLogPath,
   clearLogFile,
@@ -263,7 +263,7 @@ function hydrateRuntime() {
       dirty = true;
     }
   }
-  if (dirty) saveRuntime(runtime);
+  if (dirty) saveRuntime(runtime);recordUsage(command.id);
 }
 
 function watchProcesses() {
@@ -675,6 +675,18 @@ safeHandle("app:import-commands", async () => {
 });
 safeHandle("app:list-system-processes", async () => listMatchedSystemProcesses(loadCommands(), getStatuses()));
 safeHandle("app:kill-system-process", async (_event, pid) => await killSystemProcess(pid, terminateProcess));
+safeHandle("app:check-for-updates", async () => {
+  if (isDev) {
+    console.log("[AutoUpdate] Manual check skipped in dev");
+    return { ok: false, error: "Manual updates disabled in development mode" };
+  }
+  try {
+    const result = await autoUpdater.checkForUpdates();
+    return { ok: true, result };
+  } catch (error) {
+    return { ok: false, error: String(error.message || error) };
+  }
+});
 
 function setupAutoUpdater() {
   if (isDev) {
@@ -759,3 +771,6 @@ app.on("window-all-closed", () => {
     app.quit();
   }
 });
+
+safeHandle(app:get-usage-stats,async()=>loadUsageStats());
+safeHandle(app:get-recommended,async()=>{const top=getTopCommands(5);const cmds=loadCommands();const map=new Map(cmds.map(c=>[c.id,c]));return top.map(t=>map.get(t.id)).filter(Boolean);});

@@ -20,6 +20,7 @@ contextBridge.exposeInMainWorld("commandHub", {
   importCommands: () => ipcRenderer.invoke("app:import-commands"),
   listSystemProcesses: () => ipcRenderer.invoke("app:list-system-processes"),
   killSystemProcess: (pid) => ipcRenderer.invoke("app:kill-system-process", pid),
+  checkForUpdates: () => ipcRenderer.invoke("app:check-for-updates"),
   getPathForFile: (file) => {
     try {
       return webUtils.getPathForFile(file);

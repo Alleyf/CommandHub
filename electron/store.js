@@ -24,7 +24,9 @@ function createStore(getUserDataPath) {
     return path.join(getStoreDir(), "runtime.json");
   }
 
-  function getSettingsFile() {
+  function getUsageStatsFile(){return path.join(getStoreDir(),usage-stats.json);}
+
+function getSettingsFile() {
     return path.join(getStoreDir(), "settings.json");
   }
 
@@ -58,11 +60,14 @@ function createStore(getUserDataPath) {
     return commands[index];
   }
 
-  function loadRuntime() {
+  function loadUsageStats(){return readJson(getUsageStatsFile(),{});}
+
+function loadRuntime() {
     return readJson(getRuntimeFile(), { runtime: {} }).runtime || {};
   }
 
-  function saveRuntime(runtime) {
+  function recordUsage(c){const u=loadUsageStats();u[c]=(u[c]||0)+1;u._lastUsed=u._lastUsed||{};u._lastUsed[c]=new Date().toISOString();saveUsageStats(u);}function getTopCommands(l=5){const u=loadUsageStats();return Object.entries(u).filter(([k])=>k!=_lastUsed).sort((a,b)=>b[1]-a[1]).slice(0,l).map(([i,c])=>({id:i,count:c}));}function saveUsageStats(x){writeJson(getUsageStatsFile(),x);}
+function saveRuntime(runtime) {
     writeJson(getRuntimeFile(), { runtime });
   }
 

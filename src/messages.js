@@ -139,7 +139,14 @@ export const APP_MESSAGES = {
     loadMoreGroups: "再加载 {count} 个分组",
     renderLimitHint: "仅渲染前 {count} 个进程对应的分组，避免界面卡顿。",
     processInstances: "{count} 个实例",
-    selectFileFixHint: " "
+    selectFileFixHint: " ",
+    checkForUpdates: "检查更新",
+    checkingForUpdates: "检查中...",
+    noUpdatesAvailable: "当前已是最新版本",
+    updateAvailable: "发现新版本：{version}",
+    updateDownloading: "正在下载...",
+    updateDownloaded: "已下载，重启后应用",
+    checkUpdateError: "检查更新失败：{error}"
   },
   "en-US": {
     brandTag: "Background Service Manager",
@@ -281,6 +288,13 @@ export const APP_MESSAGES = {
     loadMoreGroups: "Load {count} more groups",
     renderLimitHint: "Only the groups derived from the first {count} processes are rendered to keep the UI responsive.",
     processInstances: "{count} instances",
-    selectFileFixHint: "If file picking still fails right after updating code, fully close Electron and run npm run start again."
+    selectFileFixHint: "If file picking still fails right after updating code, fully close Electron and run npm run start again.",
+    checkForUpdates: "Check for Updates",
+    checkingForUpdates: "Checking...",
+    noUpdatesAvailable: "You're up to date",
+    updateAvailable: "New version available: {version}",
+    updateDownloading: "Downloading...",
+    updateDownloaded: "Downloaded, restart to apply",
+    checkUpdateError: "Update check failed: {error}"
   }
 };

@@ -131,6 +131,7 @@ function App() {
   const [form, setForm] = useState(EMPTY_FORM);
   const [groupSelectValue, setGroupSelectValue] = useState("");
   const [logDrawerWidth, setLogDrawerWidth] = useState(540);
+  const [updateStatus, setUpdateStatus] = useState({ checking: false, message: "", type: "" });
   const [columnWidths, setColumnWidths] = useState({
     name: 2.2,
     status: 1,
@@ -453,6 +454,25 @@ function App() {
     if (!selectedStatus?.logPath) return;
     await window.commandHub.clearLog(selectedStatus.logPath);
     setLogTail("");
+  }
+
+  async function handleCheckForUpdates() {
+    setUpdateStatus({ checking: true, message: t("checkingForUpdates"), type: "" });
+    try {
+      const result = await window.commandHub.checkForUpdates();
+      if (result.ok) {
+        setTimeout(() => {
+          setUpdateStatus({ checking: false, message: t("noUpdatesAvailable"), type: "success" });
+          setTimeout(() => setUpdateStatus({ checking: false, message: "", type: "" }), 3000);
+        }, 500);
+      } else {
+        setUpdateStatus({ checking: false, message: t("checkUpdateError", { error: result.error }), type: "error" });
+        setTimeout(() => setUpdateStatus({ checking: false, message: "", type: "" }), 5000);
+      }
+    } catch (error) {
+      setUpdateStatus({ checking: false, message: t("checkUpdateError", { error: error.message }), type: "error" });
+      setTimeout(() => setUpdateStatus({ checking: false, message: "", type: "" }), 5000);
+    }
   }
 
   function toggleSort(nextKey) {
@@ -1066,9 +1086,19 @@ function App() {
                     <span className="switch-slider" />
                   </label>
                 </div>
+                <div className="pref-row">
+                  <div className="pref-copy">
+                    <div className="pref-title">{t("checkForUpdates")}</div>
+                    <div className="pref-help">{updateStatus.message || t("settingsDesc")}</div>
+                  </div>
+                  <button className={`btn btn-md ${updateStatus.type === "error" ? "danger" : "ghost"}`} onClick={handleCheckForUpdates} disabled={updateStatus.checking}>
+                    {updateStatus.checking ? t("checkingForUpdates") : t("checkForUpdates")}
+                  </button>
+                </div>
               </div>
             </div>
           </section>
+        )}
         )}
       </main>
 
