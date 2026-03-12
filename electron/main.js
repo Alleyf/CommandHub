@@ -1,5 +1,6 @@
-const { app, BrowserWindow, dialog, ipcMain, Menu, Tray, nativeImage, nativeTheme, shell } = require("electron");
+﻿const { app, BrowserWindow, dialog, ipcMain, Menu, Tray, nativeImage, nativeTheme, shell } = require("electron");
 const path = require("node:path");
+const { autoUpdater } = require("electron-updater");
 const fs = require("node:fs");
 const { execFile, execFileSync, spawn } = require("node:child_process");
 const util = require("node:util");
@@ -675,7 +676,62 @@ safeHandle("app:import-commands", async () => {
 safeHandle("app:list-system-processes", async () => listMatchedSystemProcesses(loadCommands(), getStatuses()));
 safeHandle("app:kill-system-process", async (_event, pid) => await killSystemProcess(pid, terminateProcess));
 
+function setupAutoUpdater() {
+  if (isDev) {
+    console.log("[AutoUpdate] Skipped in dev");
+    return;
+  }
+
+  autoUpdater.autoDownload = true;
+  autoUpdater.autoInstallOnAppQuit = true;
+
+  autoUpdater.on("checking-for-update", () => {
+    console.log("[AutoUpdate] Checking for updates...");
+  });
+
+  autoUpdater.on("update-available", (info) => {
+    console.log("[AutoUpdate] Update available:", info.version);
+    if (mainWindow && !mainWindow.isDestroyed()) {
+      mainWindow.webContents.send("update:available", info);
+    }
+  });
+
+  autoUpdater.on("download-progress", (progress) => {
+    const pct = Math.round(progress.percent);
+    if (mainWindow && !mainWindow.isDestroyed()) {
+      mainWindow.webContents.send("update:progress", { percent: pct, transferred: progress.transferred, total: progress.total });
+    }
+  });
+
+  autoUpdater.on("update-downloaded", (info) => {
+    console.log("[AutoUpdate] Update downloaded:", info.version);
+    if (mainWindow && !mainWindow.isDestroyed()) {
+      mainWindow.webContents.send("update:downloaded", info);
+    }
+    const choice = dialog.showMessageBoxSync(mainWindow, {
+      type: "info",
+      title: "Update Ready",
+      message: "A new version has been downloaded. Restart now to apply?",
+      buttons: ["Restart Now", "Later"]
+    });
+    if (choice === 0) {
+      autoUpdater.quitAndInstall();
+    }
+  });
+
+  autoUpdater.on("update-not-available", (info) => {
+    console.log("[AutoUpdate] Already up-to-date:", info.version);
+  });
+
+  autoUpdater.on("error", (err) => {
+    console.error("[AutoUpdate] Error:", err);
+  });
+
+  autoUpdater.checkForUpdates();
+}
+
 app.whenReady().then(async () => {
+  setupAutoUpdater();
   hydrateRuntime();
   saveSettings(loadSettings());
   ensureTray();
