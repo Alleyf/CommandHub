@@ -27,7 +27,6 @@
       "dist/**/*",
       "electron/**/*",
       "package.json",
-      "!**/node_modules/**/*",
       "!**/*.{ts,tsx,map,md}",
       "!scripts/**/*",
       "!vite.config.js"
@@ -82,3 +81,4 @@
     "wait-on": "^8.0.3"
   }
 }
+
