@@ -36,6 +36,7 @@ const {
   updateCommand,
   loadRuntime,
   saveRuntime,
+  recordUsage,
   getLogPath,
   clearLogFile,
   readLogTail
@@ -263,7 +264,7 @@ function hydrateRuntime() {
       dirty = true;
     }
   }
-  if (dirty) saveRuntime(runtime);recordUsage(command.id);
+  if (dirty) saveRuntime(runtime);
 }
 
 function watchProcesses() {

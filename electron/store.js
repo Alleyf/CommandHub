@@ -110,6 +110,7 @@ function saveRuntime(runtime) {
     updateCommand,
     loadRuntime,
     saveRuntime,
+    recordUsage,
     getLogPath,
     clearLogFile,
     readLogTail
