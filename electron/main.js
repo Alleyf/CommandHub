@@ -34,7 +34,6 @@ const {
   loadCommands,
   saveCommands,
   updateCommand,
-  loadRuntime,saveRuntime,loadUsageStats,getTopCommands,recordUsage,
   saveRuntime,
   getLogPath,
   clearLogFile,
@@ -772,5 +771,5 @@ app.on("window-all-closed", () => {
   }
 });
 
-safeHandle(app:get-usage-stats,async()=>loadUsageStats());
-safeHandle(app:get-recommended,async()=>{const top=getTopCommands(5);const cmds=loadCommands();const map=new Map(cmds.map(c=>[c.id,c]));return top.map(t=>map.get(t.id)).filter(Boolean);});
+safeHandle("app:get-usage-stats",async()=>loadUsageStats());
+safeHandle("app:get-recommended",async()=>{const top=getTopCommands(5);const cmds=loadCommands();const map=new Map(cmds.map(c=>[c.id,c]));return top.map(t=>map.get(t.id)).filter(Boolean);});
