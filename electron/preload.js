@@ -16,6 +16,8 @@ contextBridge.exposeInMainWorld("commandHub", {
   showWindow: () => ipcRenderer.invoke("app:show-window"),
   pickCommandFile: () => ipcRenderer.invoke("app:pick-command-file"),
   pickDirectory: () => ipcRenderer.invoke("app:pick-directory"),
+  exportCommands: () => ipcRenderer.invoke("app:export-commands"),
+  importCommands: () => ipcRenderer.invoke("app:import-commands"),
   listSystemProcesses: () => ipcRenderer.invoke("app:list-system-processes"),
   killSystemProcess: (pid) => ipcRenderer.invoke("app:kill-system-process", pid),
   getPathForFile: (file) => {

@@ -1,356 +1,26 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 
-const EMPTY_FORM = {
-  id: "",
-  name: "",
-  command: "",
-  args: "",
-  cwd: "",
-  envText: "",
-  group: ""
-};
-const NEW_GROUP_VALUE = "__new_group__";
-
-const MESSAGES = {
-  "zh-CN": {
-    brandTag: "后台服务管理器",
-    appTitle: "Command Hub",
-    lede: "把常驻 CLI、网关、开发服务和本地守护进程收进一个更清爽的控制台。",
-    navCommands: "命令",
-    navSettings: "设置",
-    managedCommands: "管理中的命令",
-    configuredInventory: "已配置条目",
-    currentlyRunning: "当前运行中",
-    activeInBackground: "后台活跃中",
-    stoppedOrIdle: "已停止或空闲",
-    readyToLaunch: "随时可启动",
-    newCommand: "新建命令",
-    editSelected: "编辑选中项",
-    deleteSelected: "删除选中项",
-    silentMode: "静默模式",
-    silentModeDesc: "Windows 会隐藏终端窗口，macOS 和 Linux 会以独立会话运行。",
-    settings: "设置",
-    closeToTray: "关闭窗口时最小化到托盘",
-    launchAtLogin: "开机自动启动应用",
-    language: "语言",
-    themeMode: "主题模式",
-    themeSystem: "跟随系统",
-    themeDark: "黑夜",
-    themeLight: "白天",
-    themeModeHelp: "支持白天、黑夜和跟随系统三种主题，整个应用会一起切换。",
-    operationsDeck: "运行面板",
-    heroTitle: "用一个桌面控制台统一编排命令行服务",
-    heroDesc: "集中管理任何由命令行拉起的常驻进程，统一启动、停止、重启、状态监控和日志查看。",
-    searchPlaceholder: "搜索命令、参数、工作目录或分组...",
-    openLogs: "打开日志目录",
-    clearLog: "清空日志",
-    startAll: "全部启动",
-    stopAll: "全部停止",
-    refresh: "刷新",
-    managedInventory: "命令清单",
-    processInventory: "进程清单",
-    commandTab: "命令清单",
-    processTab: "进程清单",
-    visibleTotal: "{visible} 个可见 / 共 {total} 个",
-    emptyCommands: "还没有命令，先创建第一个后台任务。",
-    commandDetail: "命令详情",
-    pickCommand: "选择一个命令后，这里会显示运行详情。",
-    runtimeControls: "运行控制",
-    start: "启动",
-    stop: "停止",
-    restart: "重启",
-    liveLogTail: "实时日志",
-    openLogPanel: "查看日志",
-    hideLogPanel: "收起日志",
-    infoTab: "信息",
-    logTab: "日志",
-    autoScroll: "自动滚动",
-    pauseFollow: "暂停跟随",
-    logWillCreate: "首次启动后会自动生成日志文件。",
-    noLogs: "暂无日志。",
-    commandStudio: "命令工作台",
-    editCommand: "编辑命令",
-    createCommand: "创建命令",
-    close: "关闭",
-    displayName: "显示名称",
-    executable: "可执行命令",
-    arguments: "参数",
-    workingDirectory: "工作目录",
-    environmentVariables: "环境变量",
-    cancel: "取消",
-    saveCommand: "保存命令",
-    command: "命令",
-    workingDir: "工作目录",
-    pid: "进程 ID",
-    uptime: "运行时长",
-    stateNote: "状态备注",
-    enabled: "已启用",
-    disabled: "未启用",
-    projectCwd: "（项目当前目录）",
-    group: "分组",
-    allGroups: "全部分组",
-    noGroup: "未分组",
-    groupPlaceholder: "例如 gateway / dev / services",
-    chooseGroup: "选择已有分组",
-    createGroup: "新建分组",
-    newGroupName: "新分组名称",
-    newGroupPlaceholder: "输入新的分组名称",
-    statusReady: "就绪",
-    commandFieldHint: "可手动输入命令，也可选择具体的可执行文件或脚本",
-    cwdFieldHint: "可手动输入，也可浏览选择工作目录",
-    browseFile: "选择文件",
-    browseFolder: "选择目录",
-    compactList: "紧凑列表",
-    compactListDesc: "缩小命令行高，更适合大量服务一起查看。",
-    settingsDesc: "把应用层设置独立出来，避免和运行清单、日志阅读混在一起。",
-    logMode: "日志模式",
-    logModeOverwrite: "每次启动覆盖旧日志",
-    logModeAppend: "持续追加日志",
-    logModeHelp: "覆盖模式适合你现在的需求；追加模式适合排查长时间运行问题。",
-    logsEmptySelect: "选择一个命令后，这里显示它的日志文件尾部。",
-    selectedCommand: "当前命令",
-    groupFilter: "分组筛选",
-    stateFilter: "状态筛选",
-    allStates: "全部状态",
-    stateRunning: "运行中",
-    stateStopped: "已停止",
-    stateError: "异常",
-    listSummary: "表格布局支持排序、状态过滤、分组过滤和最近运行信息。",
-    sortBy: "排序",
-    name: "名称",
-    status: "状态",
-    lastStarted: "最近启动",
-    exitCode: "退出码",
-    commandPath: "命令路径",
-    processName: "进程名",
-    processPath: "进程路径",
-    confirmEndProcess: "确定结束进程 {name} (PID {pid}) 吗？",
-    processToolbarTitle: "进程巡视",
-    processToolbarDesc: "直接查看系统当前运行的全部进程，并支持搜索、排序和结束进程。",
-    matchedOnly: "仅看匹配命令",
-    allProcesses: "全部进程",
-    matchedProcessHint: "已匹配命令",
-    matchedByPid: "运行实例匹配",
-    matchedByName: "名称匹配",
-    matchedByFuzzy: "模糊匹配",
-    memory: "内存",
-    cpu: "CPU",
-    action: "操作",
-    endProcess: "结束进程",
-    processSummary: "显示系统当前正在运行的进程，类似任务管理器。",
-    processGroupedSummary: "按应用、后台进程和 Windows 进程分类显示，并把同程序实例合并到一起。",
-    emptyProcesses: "当前没有匹配的系统进程。",
-    showCount: "已显示 {visible} 组 / 共 {total} 个进程",
-    loadProcesses: "加载系统进程中...",
-    loadMoreGroups: "再加载 {count} 个分组",
-    renderLimitHint: "仅渲染前 {count} 个进程对应的分组，避免界面卡顿。",
-    processInstances: "{count} 个实例",
-    selectFileFixHint: "如果刚更新代码后文件选择仍无响应，请完全关闭 Electron 再重新执行 npm run start。"
-  },
-  "en-US": {
-    brandTag: "Background Service Manager",
-    appTitle: "Command Hub",
-    lede: "A cleaner deck for long-running CLI apps, gateways, dev servers and local services.",
-    navCommands: "Commands",
-    navSettings: "Settings",
-    managedCommands: "Managed Commands",
-    configuredInventory: "configured inventory",
-    currentlyRunning: "Currently Running",
-    activeInBackground: "active in background",
-    stoppedOrIdle: "Stopped Or Idle",
-    readyToLaunch: "ready to launch",
-    newCommand: "New Command",
-    editSelected: "Edit Selected",
-    deleteSelected: "Delete Selected",
-    silentMode: "Silent Mode",
-    silentModeDesc: "Windows hides the shell window. macOS and Linux commands run in their own session.",
-    settings: "Settings",
-    closeToTray: "Close window to tray",
-    launchAtLogin: "Launch app at login",
-    language: "Language",
-    themeMode: "Theme Mode",
-    themeSystem: "System",
-    themeDark: "Dark",
-    themeLight: "Light",
-    themeModeHelp: "Switch the whole app between light, dark, or follow-system themes.",
-    operationsDeck: "Operations Deck",
-    heroTitle: "Modern command orchestration for desktop workflows",
-    heroDesc: "Centralize start, stop, restart, status checks and log inspection for any CLI-launched process.",
-    searchPlaceholder: "Search commands, args, working dir or group...",
-    openLogs: "Open Logs",
-    clearLog: "Clear Log",
-    startAll: "Start All",
-    stopAll: "Stop All",
-    refresh: "Refresh",
-    managedInventory: "Managed Inventory",
-    processInventory: "Process Inventory",
-    commandTab: "Command List",
-    processTab: "Process List",
-    visibleTotal: "{visible} visible / {total} total",
-    emptyCommands: "No commands yet. Create your first managed background task.",
-    commandDetail: "Command Detail",
-    pickCommand: "Pick a command to inspect runtime details.",
-    runtimeControls: "Runtime Controls",
-    start: "Start",
-    stop: "Stop",
-    restart: "Restart",
-    liveLogTail: "Live Log",
-    openLogPanel: "View Logs",
-    hideLogPanel: "Hide Logs",
-    infoTab: "Info",
-    logTab: "Logs",
-    autoScroll: "Auto Scroll",
-    pauseFollow: "Pause Follow",
-    logWillCreate: "Log file will be created on first start.",
-    noLogs: "No logs yet.",
-    commandStudio: "Command Studio",
-    editCommand: "Edit command",
-    createCommand: "Create command",
-    close: "Close",
-    displayName: "Display Name",
-    executable: "Executable",
-    arguments: "Arguments",
-    workingDirectory: "Working Directory",
-    environmentVariables: "Environment Variables",
-    cancel: "Cancel",
-    saveCommand: "Save Command",
-    command: "Command",
-    workingDir: "Working Dir",
-    pid: "PID",
-    uptime: "Uptime",
-    stateNote: "State Note",
-    enabled: "Enabled",
-    disabled: "Disabled",
-    projectCwd: "(project cwd)",
-    group: "Group",
-    allGroups: "All Groups",
-    noGroup: "Ungrouped",
-    groupPlaceholder: "For example gateway / dev / services",
-    chooseGroup: "Choose an existing group",
-    createGroup: "Create new group",
-    newGroupName: "New group name",
-    newGroupPlaceholder: "Enter a new group name",
-    statusReady: "Ready",
-    commandFieldHint: "Type a command manually or pick a concrete executable/script file",
-    cwdFieldHint: "Type manually or browse for a working directory",
-    browseFile: "Browse File",
-    browseFolder: "Browse Folder",
-    compactList: "Compact List",
-    compactListDesc: "Reduce row height and fit more services on screen.",
-    settingsDesc: "Keep app-level preferences separate from runtime inventory and logs.",
-    logMode: "Log Mode",
-    logModeOverwrite: "Overwrite on every start",
-    logModeAppend: "Append continuously",
-    logModeHelp: "Overwrite keeps each run clean. Append is better for long-running investigations.",
-    logsEmptySelect: "Select a command to inspect its latest log output here.",
-    selectedCommand: "Selected Command",
-    groupFilter: "Group Filter",
-    stateFilter: "State Filter",
-    allStates: "All States",
-    stateRunning: "Running",
-    stateStopped: "Stopped",
-    stateError: "Error",
-    listSummary: "Tabular layout with sorting, state filters, group filters and recent runtime fields.",
-    sortBy: "Sort",
-    name: "Name",
-    status: "Status",
-    lastStarted: "Last Started",
-    exitCode: "Exit Code",
-    commandPath: "Command Path",
-    processName: "Process Name",
-    processPath: "Process Path",
-    confirmEndProcess: "End process {name} (PID {pid})?",
-    processToolbarTitle: "Process Monitor",
-    processToolbarDesc: "Inspect all running system processes directly, with search, sorting, and termination controls.",
-    matchedOnly: "Matched Only",
-    allProcesses: "All Processes",
-    matchedProcessHint: "Matched command",
-    matchedByPid: "Runtime PID match",
-    matchedByName: "Name match",
-    matchedByFuzzy: "Fuzzy match",
-    memory: "Memory",
-    cpu: "CPU",
-    action: "Action",
-    endProcess: "End Process",
-    processSummary: "Shows currently running system processes, similar to Task Manager.",
-    processGroupedSummary: "Grouped into apps, background processes, and Windows processes, with same-program instances merged together.",
-    emptyProcesses: "No matching system processes right now.",
-    showCount: "{visible} groups shown / {total} total processes",
-    loadProcesses: "Loading system processes...",
-    loadMoreGroups: "Load {count} more groups",
-    renderLimitHint: "Only the groups derived from the first {count} processes are rendered to keep the UI responsive.",
-    processInstances: "{count} instances",
-    selectFileFixHint: "If file picking still fails right after updating code, fully close Electron and run npm run start again."
-  }
-};
-
-function nowIso() {
-  return new Date().toISOString();
-}
-
-function uid() {
-  return Math.random().toString(36).slice(2) + Date.now().toString(36);
-}
-
-function format(template, values) {
-  return template.replace(/\{(\w+)\}/g, (_, key) => String(values[key] ?? ""));
-}
-
-function stripAnsiSequences(text) {
-  return String(text || "")
-    .replace(/\u001b\][^\u0007]*(?:\u0007|\u001b\\)/g, "")
-    .replace(/\u001b(?:[@-Z\\-_]|\[[0-?]*[ -/]*[@-~])/g, "")
-    .replace(/\u0000/g, "");
-}
-
-function filePathFromHandle(file) {
-  if (!file) return "";
-  return window.commandHub?.getPathForFile?.(file) || file.path || "";
-}
-
-function formatDate(value) {
-  if (!value) return "--";
-  const date = new Date(value);
-  if (Number.isNaN(date.getTime())) return "--";
-  return `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, "0")}-${String(date.getDate()).padStart(2, "0")} ${String(date.getHours()).padStart(2, "0")}:${String(date.getMinutes()).padStart(2, "0")}`;
-}
-
-function uptime(startedAt) {
-  if (!startedAt) return "--";
-  const delta = Math.max(0, Math.floor((Date.now() - new Date(startedAt).getTime()) / 1000));
-  const hours = Math.floor(delta / 3600);
-  const minutes = Math.floor((delta % 3600) / 60);
-  const seconds = delta % 60;
-  if (hours) return `${hours}h ${minutes}m`;
-  if (minutes) return `${minutes}m ${seconds}s`;
-  return `${seconds}s`;
-}
-
-function toEnvMap(text) {
-  return text
-    .split("\n")
-    .map((line) => line.trim())
-    .filter(Boolean)
-    .reduce((acc, line) => {
-      const splitAt = line.indexOf("=");
-      if (splitAt > 0) acc[line.slice(0, splitAt).trim()] = line.slice(splitAt + 1).trim();
-      return acc;
-    }, {});
-}
-
-function fromCommand(command) {
-  return {
-    id: command?.id || "",
-    name: command?.name || "",
-    command: command?.command || "",
-    args: command?.args || "",
-    cwd: command?.cwd || "",
-    group: command?.group || "",
-    envText: Object.entries(command?.env || {})
-      .map(([key, value]) => `${key}=${value}`)
-      .join("\n")
-  };
-}
+import {
+  EMPTY_FORM,
+  NEW_GROUP_VALUE,
+  filePathFromHandle,
+  format,
+  formatDate,
+  fromCommand,
+  nowIso,
+  stripAnsiSequences,
+  toEnvMap,
+  uid,
+  uptime
+} from "./app-utils";
+import { APP_MESSAGES } from "./messages";
+import {
+  annotateMatchedProcesses,
+  buildProcessGroups,
+  buildVirtualProcessRows,
+  getVirtualSlice
+} from "./process-utils";
+import { COMMAND_TEMPLATES } from "./command-templates";
 
 function Metric({ label, value, hint, tone }) {
   return (
@@ -432,193 +102,6 @@ function LogoMark() {
   );
 }
 
-const PROCESS_PAGE_SIZE = 200;
-
-function normalizeProcessGroupKey(item) {
-  const name = String(item?.name || "").toLowerCase();
-  const path = String(item?.path || "").toLowerCase();
-  return `${name}::${path}`;
-}
-
-function getProcessBaseName(name) {
-  const value = String(name || "").trim();
-  return value.replace(/\.[^.]+$/, "") || value;
-}
-
-function classifyProcess(item) {
-  const name = String(item?.name || "").toLowerCase();
-  const processPath = String(item?.path || "").toLowerCase();
-  const windowsRoots = ["c:\\windows\\", "c:\\program files\\windowsapps\\", "\\system32\\", "\\syswow64\\"];
-  const windowsNames = new Set([
-    "system",
-    "registry",
-    "memory compression",
-    "idle",
-    "smss.exe",
-    "csrss.exe",
-    "wininit.exe",
-    "services.exe",
-    "lsass.exe",
-    "winlogon.exe",
-    "fontdrvhost.exe",
-    "dwm.exe",
-    "svchost.exe",
-    "sihost.exe",
-    "taskhostw.exe",
-    "startmenuexperiencehost.exe",
-    "shellexperiencehost.exe",
-    "ctfmon.exe",
-    "explorer.exe",
-    "searchhost.exe",
-    "runtimebroker.exe"
-  ]);
-
-  if (windowsNames.has(name) || windowsRoots.some((root) => processPath.includes(root))) {
-    return "windows";
-  }
-
-  if (!processPath) return "background";
-
-  return "application";
-}
-
-function buildProcessGroups(processes) {
-  const grouped = new Map();
-
-  for (const item of processes) {
-    const groupKey = normalizeProcessGroupKey(item);
-    const category = classifyProcess(item);
-    const existing = grouped.get(groupKey);
-    if (existing) {
-      existing.items.push(item);
-      existing.memoryValue += item.memoryValue ?? 0;
-      existing.cpuValue += item.cpuValue ?? 0;
-      existing.pids.push(item.pid);
-      existing.isManaged = existing.isManaged || Boolean(item.isManaged);
-      if (item.matchedCommandName) existing.matchedCommandNames.push(item.matchedCommandName);
-      if (item.matchType) existing.matchTypes.push(item.matchType);
-      continue;
-    }
-
-    grouped.set(groupKey, {
-      key: groupKey,
-      category,
-      name: getProcessBaseName(item.name),
-      displayName: item.name || "--",
-      path: item.path || "",
-      items: [item],
-      memoryValue: item.memoryValue ?? 0,
-      cpuValue: item.cpuValue ?? 0,
-      pids: [item.pid],
-      isManaged: Boolean(item.isManaged),
-      matchedCommandNames: item.matchedCommandName ? [item.matchedCommandName] : [],
-      matchTypes: item.matchType ? [item.matchType] : []
-    });
-  }
-
-  return [...grouped.values()]
-    .map((group) => ({
-      ...group,
-      count: group.items.length,
-      primaryPid: Math.min(...group.pids),
-      memory: group.memoryValue > 0 ? formatBytes(group.memoryValue) : group.items[0]?.memory || "--",
-      cpu: group.cpuValue > 0 ? `${group.cpuValue.toFixed(1)} s` : group.items[0]?.cpu || "--",
-      isManaged: group.isManaged || group.items.some((item) => item.isManaged),
-      matchedCommandNames: [...new Set(group.items.map((item) => item.matchedCommandName).filter(Boolean))],
-      matchTypes: [...new Set(group.items.map((item) => item.matchType).filter(Boolean))],
-      items: [...group.items].sort((a, b) => a.pid - b.pid)
-    }))
-    .sort((a, b) => a.name.localeCompare(b.name));
-}
-
-function formatBytes(megabytes) {
-  if (!Number.isFinite(megabytes)) return "--";
-  if (megabytes >= 1024) return `${(megabytes / 1024).toFixed(2)} GB`;
-  return `${megabytes.toFixed(1)} MB`;
-}
-
-function normalizeProcessAlias(value) {
-  return String(value || "")
-    .toLowerCase()
-    .replace(/^"+|"+$/g, "")
-    .replace(/\.(exe|cmd|bat|ps1|sh)$/g, "")
-    .replace(/[^a-z0-9]+/g, "");
-}
-
-function getManagedCommandAliases(command) {
-  const aliases = new Set();
-  const rawName = String(command?.name || "").trim();
-  const rawCommand = String(command?.command || "").trim().replace(/^"+|"+$/g, "");
-  const commandTail = rawCommand.split(/[/\\]/).pop() || "";
-
-  for (const value of [rawName, rawCommand, commandTail, commandTail.replace(/\.[^.]+$/, "")]) {
-    const normalized = normalizeProcessAlias(value);
-    if (normalized) aliases.add(normalized);
-  }
-
-  for (const token of [rawName, rawCommand, commandTail].join(" ").split(/[\s_\-/\\]+/)) {
-    const normalized = normalizeProcessAlias(token);
-    if (normalized.length >= 2) aliases.add(normalized);
-  }
-
-  return [...aliases];
-}
-
-function annotateMatchedProcesses(processes, commands, statuses) {
-  const runtimePidMap = new Map();
-  const matchers = commands.map((command) => ({
-    id: command.id,
-    name: command.name,
-    group: command.group || "",
-    state: statuses[command.id]?.state || command.lastState || "stopped",
-    aliases: getManagedCommandAliases(command)
-  }));
-
-  for (const command of commands) {
-    const pid = statuses[command.id]?.pid;
-    if (pid) {
-      runtimePidMap.set(pid, {
-        matchedCommandId: command.id,
-        matchedCommandName: command.name,
-        matchedGroup: command.group || "",
-        matchedState: statuses[command.id]?.state || "running",
-        matchType: "pid",
-        isManaged: true
-      });
-    }
-  }
-
-  return processes.map((item) => {
-    if (item.isManaged || item.matchedCommandId) return item;
-
-    const runtimeMatch = runtimePidMap.get(item.pid);
-    if (runtimeMatch) {
-      return { ...item, ...runtimeMatch };
-    }
-
-    const processName = normalizeProcessAlias(item.name);
-    const processPath = normalizeProcessAlias(item.path);
-    const matched = matchers.find((matcher) => matcher.aliases.some((alias) => {
-      if (!alias) return false;
-      return processName.includes(alias)
-        || alias.includes(processName)
-        || (processPath && processPath.includes(alias));
-    }));
-
-    if (!matched) return item;
-
-    return {
-      ...item,
-      matchedCommandId: matched.id,
-      matchedCommandName: matched.name,
-      matchedGroup: matched.group,
-      matchedState: matched.state,
-      matchType: "name",
-      isManaged: true
-    };
-  });
-}
-
 function App() {
   const [commands, setCommands] = useState([]);
   const [statuses, setStatuses] = useState({});
@@ -631,11 +114,12 @@ function App() {
   const [selectedState, setSelectedState] = useState("");
   const [commandsTab, setCommandsTab] = useState("commands");
   const [processesLoaded, setProcessesLoaded] = useState(false);
-  const [processRenderCount, setProcessRenderCount] = useState(PROCESS_PAGE_SIZE);
   const [expandedProcessGroups, setExpandedProcessGroups] = useState({});
   const [matchedOnly, setMatchedOnly] = useState(false);
   const [processSortKey, setProcessSortKey] = useState("name");
   const [processSortDirection, setProcessSortDirection] = useState("asc");
+  const [processScrollTop, setProcessScrollTop] = useState(0);
+  const [processViewportHeight, setProcessViewportHeight] = useState(640);
   const [sortKey, setSortKey] = useState("name");
   const [sortDirection, setSortDirection] = useState("asc");
   const [activeView, setActiveView] = useState("commands");
@@ -658,10 +142,12 @@ function App() {
   const fileInputRef = useRef(null);
   const directoryInputRef = useRef(null);
   const resizeStateRef = useRef(null);
-  const logViewRef = useRef(null);
+  const inlineLogViewRef = useRef(null);
+  const drawerLogViewRef = useRef(null);
+  const processBodyRef = useRef(null);
 
   const language = settings.language || "zh-CN";
-  const copy = MESSAGES[language] || MESSAGES["zh-CN"];
+  const copy = APP_MESSAGES[language] || APP_MESSAGES["zh-CN"];
 
   function t(key, values) {
     const template = copy[key] || key;
@@ -759,14 +245,9 @@ function App() {
       });
   }, [matchedOnly, matchedSystemProcesses, processSortDirection, processSortKey, search]);
 
-  const visibleProcesses = useMemo(
-    () => filteredProcesses.slice(0, processRenderCount),
-    [filteredProcesses, processRenderCount]
-  );
-
   const processGroups = useMemo(() => {
     const direction = processSortDirection === "asc" ? 1 : -1;
-    const groups = buildProcessGroups(visibleProcesses).sort((a, b) => {
+    const groups = buildProcessGroups(filteredProcesses).sort((a, b) => {
       if (processSortKey === "name") return a.name.localeCompare(b.name) * direction;
       if (processSortKey === "cpu") return (a.cpuValue - b.cpuValue) * direction;
       if (processSortKey === "memory") return (a.memoryValue - b.memoryValue) * direction;
@@ -774,10 +255,11 @@ function App() {
       return 0;
     });
 
-    const categoryOrder = ["application", "background", "windows"];
+    const categoryOrder = ["application", "background", "service", "windows"];
     const categoryLabels = {
       application: { "zh-CN": "应用", "en-US": "Apps" },
       background: { "zh-CN": "后台进程", "en-US": "Background Processes" },
+      service: { "zh-CN": "Windows 服务", "en-US": "Windows Services" },
       windows: { "zh-CN": "Windows 进程", "en-US": "Windows Processes" }
     };
 
@@ -791,7 +273,17 @@ function App() {
         };
       })
       .filter((section) => section.items.length > 0);
-  }, [language, processSortDirection, processSortKey, visibleProcesses]);
+  }, [filteredProcesses, language, processSortDirection, processSortKey]);
+
+  const processRows = useMemo(
+    () => buildVirtualProcessRows(processGroups, expandedProcessGroups, false),
+    [expandedProcessGroups, processGroups]
+  );
+
+  const visibleProcessWindow = useMemo(
+    () => getVirtualSlice(processRows, processScrollTop, processViewportHeight),
+    [processRows, processScrollTop, processViewportHeight]
+  );
 
   useEffect(() => {
     if (!sortedCommands.some((item) => item.id === selectedId)) {
@@ -821,10 +313,19 @@ function App() {
   }, [selectedStatus?.logPath, statuses, selectedId]);
 
   useEffect(() => {
-    if (!autoScrollLogs || !logViewRef.current) return;
-    const node = logViewRef.current;
-    node.scrollTop = node.scrollHeight;
-  }, [logTail, autoScrollLogs, activeView]);
+    if (!autoScrollLogs) return;
+
+    const syncToBottom = () => {
+      for (const node of [inlineLogViewRef.current, drawerLogViewRef.current]) {
+        if (!node) continue;
+        node.scrollTop = node.scrollHeight;
+      }
+    };
+
+    syncToBottom();
+    const frameId = window.requestAnimationFrame(syncToBottom);
+    return () => window.cancelAnimationFrame(frameId);
+  }, [logTail, autoScrollLogs, activeView, detailTab, logPanelOpen, selectedId]);
 
   const metrics = useMemo(() => {
     const running = Object.values(statuses).filter((item) => item.state === "running").length;
@@ -967,7 +468,6 @@ function App() {
     const list = await window.commandHub.listSystemProcesses();
     setSystemProcesses(list || []);
     setProcessesLoaded(true);
-    setProcessRenderCount(PROCESS_PAGE_SIZE);
   }
 
   async function endSystemProcess(pid) {
@@ -996,8 +496,21 @@ function App() {
   }
 
   useEffect(() => {
-    setProcessRenderCount(PROCESS_PAGE_SIZE);
+    setProcessScrollTop(0);
+    processBodyRef.current?.scrollTo({ top: 0 });
   }, [matchedOnly, search, processSortDirection, processSortKey]);
+
+  useEffect(() => {
+    const node = processBodyRef.current;
+    if (!node) return;
+
+    const measure = () => setProcessViewportHeight(node.clientHeight || 640);
+    measure();
+
+    const observer = new ResizeObserver(() => measure());
+    observer.observe(node);
+    return () => observer.disconnect();
+  }, [commandsTab]);
 
   useEffect(() => {
     if (commandsTab === "processes" && !processesLoaded) {
@@ -1161,12 +674,6 @@ function App() {
           <Metric label={t("stoppedOrIdle")} value={metrics.idle} hint={t("readyToLaunch")} tone="red" />
         </div>
 
-        <div className="sidebar-actions">
-          <button className="btn btn-md primary" onClick={openCreate}>{t("newCommand")}</button>
-          <button className="btn btn-md secondary" onClick={openEdit} disabled={!selected}>{t("editSelected")}</button>
-          <button className="btn btn-md danger" onClick={removeSelected} disabled={!selected}>{t("deleteSelected")}</button>
-        </div>
-
         <div className="sidebar-note">
           <span>{t("silentMode")}</span>
           <p>{t("silentModeDesc")}</p>
@@ -1234,7 +741,14 @@ function App() {
                     <div className="section-title">{t("managedInventory")}</div>
                     <div className="section-copy">{t("visibleTotal", { visible: sortedCommands.length, total: commands.length })}</div>
                   </div>
-                  <div className="section-copy right-copy">{t("listSummary")}</div>
+                  <div className="inventory-actions">
+                    <div className="section-copy right-copy">{t("listSummary")}</div>
+                    <div className="toolbar-buttons">
+                      <button className="btn btn-sm primary" onClick={openCreate}>{t("newCommand")}</button>
+                      <button className="btn btn-sm ghost" onClick={openEdit} disabled={!selected}>{t("editSelected")}</button>
+                      <button className="btn btn-sm danger" onClick={removeSelected} disabled={!selected}>{t("deleteSelected")}</button>
+                    </div>
+                  </div>
                 </div>
 
                 <div className="table-wrap">
@@ -1313,105 +827,108 @@ function App() {
                         <div className="table-head-cell"><button className="table-sort" onClick={() => toggleProcessSort("cpu")}>{t("cpu")}{processSortKey === "cpu" ? (processSortDirection === "asc" ? " ↑" : " ↓") : ""}</button></div>
                         <div className="table-head-cell"><button className="table-sort">{t("action")}</button></div>
                       </div>
-                      <div className="table-body process-group-body">
+                      <div
+                        ref={processBodyRef}
+                        className="table-body process-group-body"
+                        onScroll={(event) => setProcessScrollTop(event.currentTarget.scrollTop)}
+                      >
                         {!processesLoaded && <div className="empty">{t("loadProcesses")}</div>}
                         {processesLoaded && filteredProcesses.length === 0 && <div className="empty">{t("emptyProcesses")}</div>}
-                        {processGroups.map((section) => (
-                          <div key={section.key} className="process-section">
-                            <div className="process-section-title">
-                              <span>{section.label}</span>
-                              <span className="process-section-count">{section.items.length}</span>
-                            </div>
-                            {section.items.map((group) => {
-                              const expanded = group.count === 1 ? true : Boolean(expandedProcessGroups[group.key]);
-                              return (
-                                <div key={group.key} className="process-group">
-                                  <div
-                                    className={`table-row process-table process-group-row ${expanded ? "expanded" : ""} ${group.isManaged ? "process-row-managed" : ""}`}
-                                    onClick={() => group.count > 1 && toggleProcessGroup(group.key)}
-                                  >
-                                    <div className="cell cell-name">
-                                      <div className="process-name-line">
-                                        {group.count > 1 && <span className="process-chevron">{expanded ? "▾" : "▸"}</span>}
-                                        <div className="row-title">{group.displayName}</div>
-                                        {group.isManaged && <span className={`badge ${group.matchTypes.includes("pid") ? "badge-pid" : "badge-name"}`}>{t("matchedProcessHint")}</span>}
-                                        {group.count > 1 && <span className="process-group-pill">{t("processInstances", { count: group.count })}</span>}
-                                      </div>
-                                      <div className="row-sub">
-                                        {group.count > 1 ? `${t("pid")}: ${group.primaryPid}` : `${t("pid")}: ${group.primaryPid}`}
-                                        {group.matchedCommandNames.length > 0 ? ` · ${group.matchedCommandNames.join(", ")}` : ""}
-                                        {group.matchTypes.includes("pid")
-                                          ? ` · ${t("matchedByPid")}`
-                                          : group.matchTypes.includes("name")
-                                            ? ` · ${t("matchedByName")}`
-                                            : group.matchTypes.includes("fuzzy")
-                                              ? ` · ${t("matchedByFuzzy")}`
-                                              : ""}
-                                      </div>
+                        {processesLoaded && filteredProcesses.length > 0 && (
+                          <div className="process-virtual-space" style={{ height: `${visibleProcessWindow.totalHeight}px` }}>
+                            <div
+                              className="process-virtual-layer"
+                              style={{ transform: `translateY(${visibleProcessWindow.topSpacer}px)` }}
+                            >
+                              {visibleProcessWindow.items.map((row) => {
+                                if (row.type === "section") {
+                                  return (
+                                    <div key={row.key} className="process-section-title process-row-shell">
+                                      <span>{row.section.label}</span>
+                                      <span className="process-section-count">{row.section.items.length}</span>
                                     </div>
-                                    <div className="cell"><div className="path-cell mono">{group.path || "--"}</div></div>
-                                    <div className="cell mono">{group.count > 1 ? group.primaryPid : group.items[0]?.pid}</div>
-                                    <div className="cell mono">{group.memory || "--"}</div>
-                                    <div className="cell mono">{group.cpu || "--"}</div>
-                                    <div className="cell">
-                                      {group.count === 1 ? (
-                                        <button className="btn btn-sm danger" onClick={(event) => { event.stopPropagation(); endSystemProcess(group.items[0].pid); }}>
-                                          {t("endProcess")}
-                                        </button>
-                                      ) : (
-                                        <span className="row-sub">{" "}</span>
-                                      )}
-                                    </div>
-                                  </div>
-                                  {expanded && group.count > 1 && (
-                                    <div className="process-group-children">
-                                      {group.items.map((item) => (
-                                        <div key={item.pid} className={`table-row process-table process-child-row ${item.isManaged ? "process-row-managed" : ""}`}>
-                                          <div className="cell cell-name">
-                                            <div className="process-name-line child-line">
-                                              <span className="process-child-marker">•</span>
-                                              <div className="row-title">{item.name}</div>
-                                              {item.isManaged && <span className={`badge ${item.matchType === "pid" ? "badge-pid" : "badge-name"}`}>{t("matchedProcessHint")}</span>}
-                                            </div>
-                                            <div className="row-sub">
-                                              {t("pid")}: {item.pid}
-                                              {item.matchedCommandName ? ` · ${item.matchedCommandName}` : ""}
-                                              {item.matchType === "pid"
-                                                ? ` · ${t("matchedByPid")}`
-                                                : item.matchType === "name"
-                                                  ? ` · ${t("matchedByName")}`
-                                                  : item.matchType === "fuzzy"
-                                                    ? ` · ${t("matchedByFuzzy")}`
-                                                    : ""}
-                                            </div>
+                                  );
+                                }
+
+                                if (row.type === "group") {
+                                  const { group, expanded } = row;
+                                  return (
+                                    <div key={row.key} className="process-group process-row-shell">
+                                      <div
+                                        className={`table-row process-table process-group-row ${expanded ? "expanded" : ""} ${group.isManaged ? "process-row-managed" : ""}`}
+                                        onClick={() => group.count > 1 && toggleProcessGroup(group.key)}
+                                      >
+                                        <div className="cell cell-name">
+                                          <div className="process-name-line">
+                                            {group.count > 1 && <span className="process-chevron">{expanded ? "▾" : "▸"}</span>}
+                                            <div className="row-title">{group.displayName}</div>
+                                            {group.isManaged && <span className={`badge ${group.matchTypes.includes("pid") ? "badge-pid" : "badge-name"}`}>{t("matchedProcessHint")}</span>}
+                                            {group.count > 1 && <span className="process-group-pill">{t("processInstances", { count: group.count })}</span>}
                                           </div>
-                                          <div className="cell"><div className="path-cell mono">{item.path || "--"}</div></div>
-                                          <div className="cell mono">{item.pid}</div>
-                                          <div className="cell mono">{item.memory || "--"}</div>
-                                          <div className="cell mono">{item.cpu || "--"}</div>
-                                          <div className="cell">
-                                            <button className="btn btn-sm danger" onClick={() => endSystemProcess(item.pid)}>{t("endProcess")}</button>
+                                          <div className="row-sub">
+                                            {`${t("pid")}: ${group.primaryPid}`}
+                                            {group.matchedCommandNames.length > 0 ? ` · ${group.matchedCommandNames.join(", ")}` : ""}
+                                            {group.matchTypes.includes("pid")
+                                              ? ` · ${t("matchedByPid")}`
+                                              : group.matchTypes.includes("name")
+                                                ? ` · ${t("matchedByName")}`
+                                                : group.matchTypes.includes("fuzzy")
+                                                  ? ` · ${t("matchedByFuzzy")}`
+                                                  : ""}
                                           </div>
                                         </div>
-                                      ))}
+                                        <div className="cell"><div className="path-cell mono">{group.path || "--"}</div></div>
+                                        <div className="cell mono">{group.count > 1 ? group.primaryPid : group.items[0]?.pid}</div>
+                                        <div className="cell mono">{group.memory || "--"}</div>
+                                        <div className="cell mono">{group.cpu || "--"}</div>
+                                        <div className="cell">
+                                          {group.count === 1 ? (
+                                            <button className="btn btn-sm danger" onClick={(event) => { event.stopPropagation(); endSystemProcess(group.items[0].pid); }}>
+                                              {t("endProcess")}
+                                            </button>
+                                          ) : (
+                                            <span className="row-sub">{" "}</span>
+                                          )}
+                                        </div>
+                                      </div>
                                     </div>
-                                  )}
-                                </div>
-                              );
-                            })}
-                          </div>
-                        ))}
-                        {processesLoaded && filteredProcesses.length > visibleProcesses.length && (
-                          <div className="process-load-more">
-                            <div className="section-copy">
-                              {t("renderLimitHint", { count: visibleProcesses.length })}
+                                  );
+                                }
+
+                                const item = row.item;
+                                return (
+                                  <div key={row.key} className="process-group-children process-row-shell">
+                                    <div className={`table-row process-table process-child-row ${item.isManaged ? "process-row-managed" : ""}`}>
+                                      <div className="cell cell-name">
+                                        <div className="process-name-line child-line">
+                                          <span className="process-child-marker">•</span>
+                                          <div className="row-title">{item.name}</div>
+                                          {item.isManaged && <span className={`badge ${item.matchType === "pid" ? "badge-pid" : "badge-name"}`}>{t("matchedProcessHint")}</span>}
+                                        </div>
+                                        <div className="row-sub">
+                                          {t("pid")}: {item.pid}
+                                          {item.matchedCommandName ? ` · ${item.matchedCommandName}` : ""}
+                                          {item.matchType === "pid"
+                                            ? ` · ${t("matchedByPid")}`
+                                            : item.matchType === "name"
+                                              ? ` · ${t("matchedByName")}`
+                                              : item.matchType === "fuzzy"
+                                                ? ` · ${t("matchedByFuzzy")}`
+                                                : ""}
+                                        </div>
+                                      </div>
+                                      <div className="cell"><div className="path-cell mono">{item.path || "--"}</div></div>
+                                      <div className="cell mono">{item.pid}</div>
+                                      <div className="cell mono">{item.memory || "--"}</div>
+                                      <div className="cell mono">{item.cpu || "--"}</div>
+                                      <div className="cell">
+                                        <button className="btn btn-sm danger" onClick={() => endSystemProcess(item.pid)}>{t("endProcess")}</button>
+                                      </div>
+                                    </div>
+                                  </div>
+                                );
+                              })}
                             </div>
-                            <button
-                              className="btn btn-md ghost"
-                              onClick={() => setProcessRenderCount((current) => current + PROCESS_PAGE_SIZE)}
-                            >
-                              {t("loadMoreGroups", { count: Math.min(PROCESS_PAGE_SIZE, filteredProcesses.length - visibleProcesses.length) })}
-                            </button>
                           </div>
                         )}
                       </div>
@@ -1460,7 +977,7 @@ function App() {
                                   </button>
                                 </div>
                               </div>
-                              <pre ref={logViewRef} className="log-view inline-log-view">{selected ? (logTail || t("noLogs")) : t("logsEmptySelect")}</pre>
+                              <pre ref={inlineLogViewRef} className="log-view inline-log-view">{selected ? (logTail || t("noLogs")) : t("logsEmptySelect")}</pre>
                             </div>
                           )}
                         </>
@@ -1644,7 +1161,7 @@ function App() {
           </button>
           <button className="btn btn-sm ghost" onClick={() => window.commandHub.openLogFolder()}>{t("openLogs")}</button>
         </div>
-        <pre className="log-view drawer-log-view">{selected ? (logTail || t("noLogs")) : t("logsEmptySelect")}</pre>
+        <pre ref={drawerLogViewRef} className="log-view drawer-log-view">{selected ? (logTail || t("noLogs")) : t("logsEmptySelect")}</pre>
       </aside>
       </div>
     </div>
