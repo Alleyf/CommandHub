@@ -1,5 +1,7 @@
 name: Release
 
+permissions:
+  contents: write
 on:
   push:
     tags:
@@ -26,4 +28,4 @@ jobs:
       - name: Build and Release
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-        run: npm run dist
+        run: npm run release
