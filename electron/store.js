@@ -8,6 +8,18 @@ function stripAnsiSequences(text) {
     .replace(/\u0000/g, "");
 }
 
+function readJson(file, fallback) {
+  try {
+    return JSON.parse(fs.readFileSync(file, "utf8"));
+  } catch {
+    return fallback;
+  }
+}
+
+function writeJson(file, value) {
+  fs.writeFileSync(file, JSON.stringify(value, null, 2), "utf8");
+}
+
 function createStore(getUserDataPath) {
   function getStoreDir() {
     const dir = path.join(getUserDataPath(), "command-hub");
@@ -24,22 +36,20 @@ function createStore(getUserDataPath) {
     return path.join(getStoreDir(), "runtime.json");
   }
 
-  function getUsageStatsFile(){return path.join(getStoreDir(),usage-stats.json);}
+  function getUsageStatsFile() {
+    return path.join(getStoreDir(), "usage-stats.json");
+  }
 
-function getSettingsFile() {
+  function getSettingsFile() {
     return path.join(getStoreDir(), "settings.json");
   }
 
-  function readJson(file, fallback) {
-    try {
-      return JSON.parse(fs.readFileSync(file, "utf8"));
-    } catch {
-      return fallback;
-    }
+  function getOperationLogFile() {
+    return path.join(getStoreDir(), "operation-log.json");
   }
 
-  function writeJson(file, value) {
-    fs.writeFileSync(file, JSON.stringify(value, null, 2), "utf8");
+  function getLogsDir() {
+    return path.join(getStoreDir(), "logs");
   }
 
   function loadCommands() {
@@ -60,19 +70,40 @@ function getSettingsFile() {
     return commands[index];
   }
 
-  function loadUsageStats(){return readJson(getUsageStatsFile(),{});}
+  function loadUsageStats() {
+    return readJson(getUsageStatsFile(), { counts: {}, lastUsed: {} });
+  }
 
-function loadRuntime() {
+  function saveUsageStats(value) {
+    writeJson(getUsageStatsFile(), value);
+  }
+
+  function recordUsage(commandId) {
+    if (!commandId) return;
+    const usage = loadUsageStats();
+    usage.counts[commandId] = (usage.counts[commandId] || 0) + 1;
+    usage.lastUsed[commandId] = new Date().toISOString();
+    saveUsageStats(usage);
+  }
+
+  function getTopCommands(limit = 5) {
+    const usage = loadUsageStats();
+    return Object.entries(usage.counts || {})
+      .sort((left, right) => right[1] - left[1])
+      .slice(0, limit)
+      .map(([id, count]) => ({ id, count, lastUsedAt: usage.lastUsed?.[id] || null }));
+  }
+
+  function loadRuntime() {
     return readJson(getRuntimeFile(), { runtime: {} }).runtime || {};
   }
 
-  function recordUsage(c){const u=loadUsageStats();u[c]=(u[c]||0)+1;u._lastUsed=u._lastUsed||{};u._lastUsed[c]=new Date().toISOString();saveUsageStats(u);}function getTopCommands(l=5){const u=loadUsageStats();return Object.entries(u).filter(([k])=>k!=_lastUsed).sort((a,b)=>b[1]-a[1]).slice(0,l).map(([i,c])=>({id:i,count:c}));}function saveUsageStats(x){writeJson(getUsageStatsFile(),x);}
-function saveRuntime(runtime) {
+  function saveRuntime(runtime) {
     writeJson(getRuntimeFile(), { runtime });
   }
 
   function getLogPath(id) {
-    return path.join(getStoreDir(), "logs", `${id}.log`);
+    return path.join(getLogsDir(), `${id}.log`);
   }
 
   function clearLogFile(logPath) {
@@ -88,14 +119,82 @@ function saveRuntime(runtime) {
     }
   }
 
-  function readLogTail(logPath) {
+  function readLogTail(logPath, maxChars = 12000) {
     try {
-      const content = fs.readFileSync(logPath);
-      const text = content.toString("utf8");
-      return stripAnsiSequences(text).slice(-12000);
+      const content = fs.readFileSync(logPath, "utf8");
+      return stripAnsiSequences(content).slice(-maxChars);
     } catch {
       return "";
     }
+  }
+
+  function loadOperationLog() {
+    const data = readJson(getOperationLogFile(), { entries: [] });
+    return Array.isArray(data.entries) ? data.entries : [];
+  }
+
+  function saveOperationLog(entries) {
+    writeJson(getOperationLogFile(), { entries });
+  }
+
+  function appendOperationLog(entry) {
+    const entries = loadOperationLog();
+    entries.unshift(entry);
+    saveOperationLog(entries.slice(0, 1000));
+  }
+
+  function clearOperationLog() {
+    saveOperationLog([]);
+  }
+
+  function buildGlobalLogEntries(commands, runtime, options = {}) {
+    const { category = "", commandId = "", query = "", limit = 200 } = options;
+    const normalizedQuery = String(query || "").trim().toLowerCase();
+    const operationEntries = loadOperationLog().map((entry) => ({
+      ...entry,
+      kind: "operation"
+    }));
+    const commandEntries = commands.map((command) => {
+      const info = runtime[command.id];
+      const logPath = info?.logPath || getLogPath(command.id);
+      return {
+        id: `command:${command.id}`,
+        kind: "command",
+        category: "command",
+        level: command.lastState === "error" ? "error" : command.lastState === "running" ? "success" : "info",
+        createdAt: command.updatedAt || command.lastStoppedAt || command.lastStartedAt || command.createdAt || new Date().toISOString(),
+        commandId: command.id,
+        commandName: command.name,
+        title: command.name,
+        summary: [command.command, command.args].filter(Boolean).join(" "),
+        state: command.lastState || "stopped",
+        lastStartedAt: command.lastStartedAt || null,
+        lastStoppedAt: command.lastStoppedAt || null,
+        lastExitCode: command.lastExitCode ?? null,
+        logPath,
+        tail: readLogTail(logPath, 4000)
+      };
+    });
+
+    return [...operationEntries, ...commandEntries]
+      .filter((entry) => {
+        const categoryMatch = !category || entry.category === category || entry.kind === category;
+        const commandMatch = !commandId || entry.commandId === commandId;
+        const text = [
+          entry.title,
+          entry.summary,
+          entry.commandName,
+          entry.commandId,
+          entry.level,
+          entry.category,
+          entry.state,
+          entry.tail
+        ].join(" ").toLowerCase();
+        const queryMatch = !normalizedQuery || text.includes(normalizedQuery);
+        return categoryMatch && commandMatch && queryMatch;
+      })
+      .sort((left, right) => new Date(right.createdAt).getTime() - new Date(left.createdAt).getTime())
+      .slice(0, limit);
   }
 
   return {
@@ -103,17 +202,27 @@ function saveRuntime(runtime) {
     getCommandsFile,
     getRuntimeFile,
     getSettingsFile,
+    getLogsDir,
+    getOperationLogFile,
     readJson,
     writeJson,
     loadCommands,
     saveCommands,
     updateCommand,
+    loadUsageStats,
+    saveUsageStats,
+    recordUsage,
+    getTopCommands,
     loadRuntime,
     saveRuntime,
-    recordUsage,
     getLogPath,
     clearLogFile,
-    readLogTail
+    readLogTail,
+    loadOperationLog,
+    saveOperationLog,
+    appendOperationLog,
+    clearOperationLog,
+    buildGlobalLogEntries
   };
 }
 

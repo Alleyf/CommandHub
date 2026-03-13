@@ -45,7 +45,7 @@
           ]
         }
       ],
-      "icon": "electron/assets/icon-256.png",
+      "icon": "electron/assets/icon.ico",
       "signAndEditExecutable": false
     },
     "nsis": {
@@ -57,7 +57,8 @@
       "createDesktopShortcut": true,
       "createStartMenuShortcut": true,
       "installerIcon": "electron/assets/icon.ico",
-      "uninstallerIcon": "electron/assets/icon.ico"
+      "uninstallerIcon": "electron/assets/icon.ico",
+      "installerHeaderIcon": "electron/assets/icon.ico"
     },
     "linux": {
       "icon": "electron/assets/icon-256.png",

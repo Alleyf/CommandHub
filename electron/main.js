@@ -18,7 +18,9 @@ const DEFAULT_SETTINGS = {
   launchAtLogin: false,
   language: "zh-CN",
   logMode: "overwrite",
-  themeMode: "system"
+  themeMode: "system",
+  particleMode: false,
+  gestureMode: false
 };
 
 let mainWindow = null;
@@ -36,12 +38,17 @@ const {
   loadCommands,
   saveCommands,
   updateCommand,
+  loadUsageStats,
   loadRuntime,
   saveRuntime,
+  getTopCommands,
   recordUsage,
   getLogPath,
   clearLogFile,
-  readLogTail
+  readLogTail,
+  appendOperationLog,
+  clearOperationLog,
+  buildGlobalLogEntries
 } = store;
 
 function sanitizeImportedCommands(value) {
@@ -86,6 +93,9 @@ function loadSettings() {
 
 function saveSettings(settings) {
   const merged = { ...DEFAULT_SETTINGS, ...settings };
+  if (!merged.particleMode) {
+    merged.gestureMode = false;
+  }
   writeJson(getSettingsFile(), merged);
   app.setLoginItemSettings({ openAtLogin: Boolean(merged.launchAtLogin) });
   applyThemeMode(merged.themeMode);
@@ -102,6 +112,20 @@ function applyThemeMode(themeMode) {
 
 function nowIso() {
   return new Date().toISOString();
+}
+
+function logEvent(entry) {
+  appendOperationLog({
+    id: `op:${Date.now().toString(36)}:${Math.random().toString(36).slice(2, 8)}`,
+    createdAt: nowIso(),
+    category: entry.category || "operation",
+    level: entry.level || "info",
+    title: entry.title || "Event",
+    summary: entry.summary || "",
+    commandId: entry.commandId || "",
+    commandName: entry.commandName || "",
+    details: entry.details || null
+  });
 }
 
 function pidExists(pid) {
@@ -300,6 +324,15 @@ function watchProcesses() {
         updatedAt: nowIso(),
         lastState: (exitCode === 0 || exitCode === null || exitCode === undefined) ? "stopped" : "error"
       }));
+      logEvent({
+        category: "command",
+        level: exitCode === 0 || exitCode === null || exitCode === undefined ? "info" : "error",
+        title: exitCode === 0 || exitCode === null || exitCode === undefined ? "Command exited" : "Command exited with error",
+        summary: `${command?.name || id} exited${exitCode === null || exitCode === undefined ? "" : ` with code ${exitCode}`}.`,
+        commandId: id,
+        commandName: command?.name || "",
+        details: { exitCode, logPath: info?.logPath || getLogPath(id) }
+      });
       changed = true;
       refreshTrayMenu();
       updateRenderer();
@@ -339,6 +372,14 @@ async function startCommand(command) {
   const settings = loadSettings();
   const existingRuntime = currentRuntime[command.id];
   if (existingRuntime?.pid && pidExists(existingRuntime.pid)) {
+    logEvent({
+      category: "operation",
+      level: "info",
+      title: "Command already running",
+      summary: `${command.name} is already running.`,
+      commandId: command.id,
+      commandName: command.name
+    });
     return createStatus({
       state: "running",
       pid: existingRuntime.pid,
@@ -361,6 +402,15 @@ async function startCommand(command) {
     }
     if (!cleared) {
       console.warn(`Giving up on clearing log file for ${command.id} after 5 attempts.`);
+      logEvent({
+        category: "command",
+        level: "error",
+        title: "Command start blocked",
+        summary: `${command.name} could not clear its log file before launch.`,
+        commandId: command.id,
+        commandName: command.name,
+        details: { logPath }
+      });
       return createStatus({
         state: "error",
         message: "Log file is busy and could not be cleared. Please try again in a few seconds.",
@@ -385,6 +435,15 @@ async function startCommand(command) {
       }
     } catch (error) {
       console.error(`Failed to start command ${command.id}:`, error);
+      logEvent({
+        category: "command",
+        level: "error",
+        title: "Command start failed",
+        summary: `${command.name} failed to start: ${String(error.message || error)}`,
+        commandId: command.id,
+        commandName: command.name,
+        details: { logPath }
+      });
       return createStatus({
         state: "error",
         message: String(error.message || error),
@@ -431,6 +490,16 @@ async function startCommand(command) {
     updatedAt: nowIso(),
     lastState: "running"
   }));
+  recordUsage(command.id);
+  logEvent({
+    category: "command",
+    level: "success",
+    title: "Command started",
+    summary: `${command.name} started successfully.`,
+    commandId: command.id,
+    commandName: command.name,
+    details: { pid: runtimePid, logPath }
+  });
   refreshTrayMenu();
   return status;
 }
@@ -438,7 +507,16 @@ async function startCommand(command) {
 async function stopCommand(id) {
   const runtime = loadRuntime();
   const data = runtime[id];
+  const command = loadCommands().find((item) => item.id === id);
   if (!data?.pid) {
+    logEvent({
+      category: "operation",
+      level: "info",
+      title: "Command already stopped",
+      summary: `${command?.name || id} is not running.`,
+      commandId: id,
+      commandName: command?.name || ""
+    });
     return createStatus({ state: "stopped", message: "Not running" });
   }
 
@@ -465,6 +543,15 @@ async function stopCommand(id) {
     updatedAt: nowIso(),
     lastState: "stopped"
   }));
+  logEvent({
+    category: "command",
+    level: "info",
+    title: "Command stopped",
+    summary: `${command?.name || id} stopped.`,
+    commandId: id,
+    commandName: command?.name || "",
+    details: { pid: data.pid, logPath: data.logPath || "" }
+  });
 
   refreshTrayMenu();
   return createStatus({
@@ -528,8 +615,8 @@ async function createWindow() {
   mainWindow = new BrowserWindow({
     width: 1520,
     height: 920,
-    minWidth: 1220,
-    minHeight: 760,
+    minWidth: 880,
+    minHeight: 640,
     icon: getWindowIconPath(),
     titleBarStyle: process.platform === "darwin" ? "hiddenInset" : "default",
     backgroundColor: "#071118",
@@ -581,17 +668,35 @@ safeHandle("app:get-state", async () => {
 safeHandle("app:save-command", async (_event, payload) => {
   const commands = loadCommands();
   const index = commands.findIndex((item) => item.id === payload.id);
+  const mode = index >= 0 ? "updated" : "created";
   if (index >= 0) commands[index] = payload;
   else commands.push(payload);
   saveCommands(commands);
+  logEvent({
+    category: "operation",
+    level: "success",
+    title: index >= 0 ? "Command updated" : "Command created",
+    summary: `${payload.name} was ${mode}.`,
+    commandId: payload.id,
+    commandName: payload.name
+  });
   refreshTrayMenu();
   updateRenderer();
   return { ok: true };
 });
 safeHandle("app:delete-command", async (_event, id) => {
+  const command = loadCommands().find((item) => item.id === id);
   await stopCommand(id);
   const commands = loadCommands().filter((item) => item.id !== id);
   saveCommands(commands);
+  logEvent({
+    category: "operation",
+    level: "info",
+    title: "Command deleted",
+    summary: `${command?.name || id} was removed from the hub.`,
+    commandId: id,
+    commandName: command?.name || ""
+  });
   refreshTrayMenu();
   updateRenderer();
   return { ok: true };
@@ -617,6 +722,13 @@ safeHandle("app:stop-all", async (_event, group) => await stopAllCommands(group)
 safeHandle("app:get-log-tail", async (_event, logPath) => readLogTail(logPath));
 safeHandle("app:clear-log", async (_event, logPath) => {
   clearLogFile(logPath);
+  logEvent({
+    category: "operation",
+    level: "info",
+    title: "Command log cleared",
+    summary: `Cleared command output log at ${logPath}.`,
+    details: { logPath }
+  });
   return { ok: true };
 });
 
@@ -626,6 +738,18 @@ safeHandle("app:open-log-folder", async () => {
 });
 safeHandle("app:save-settings", async (_event, payload) => {
   const settings = saveSettings(payload);
+  logEvent({
+    category: "operation",
+    level: "info",
+    title: "Settings updated",
+    summary: "Application preferences were updated.",
+    details: {
+      particleMode: settings.particleMode,
+      gestureMode: settings.gestureMode,
+      themeMode: settings.themeMode,
+      language: settings.language
+    }
+  });
   updateRenderer();
   return settings;
 });
@@ -656,6 +780,13 @@ safeHandle("app:export-commands", async () => {
   if (result.canceled || !result.filePath) return { ok: false, canceled: true };
 
   fs.writeFileSync(result.filePath, JSON.stringify({ commands: loadCommands() }, null, 2), "utf8");
+  logEvent({
+    category: "operation",
+    level: "success",
+    title: "Commands exported",
+    summary: `Exported ${loadCommands().length} commands.`,
+    details: { filePath: result.filePath }
+  });
   return { ok: true, filePath: result.filePath, count: loadCommands().length };
 });
 safeHandle("app:import-commands", async () => {
@@ -672,12 +803,44 @@ safeHandle("app:import-commands", async () => {
     merged.set(item.id, { ...merged.get(item.id), ...item, updatedAt: nowIso() });
   }
   saveCommands([...merged.values()]);
+  logEvent({
+    category: "operation",
+    level: "success",
+    title: "Commands imported",
+    summary: `Imported ${imported.length} commands from ${path.basename(result.filePaths[0])}.`,
+    details: { filePath: result.filePaths[0], count: imported.length, total: merged.size }
+  });
   refreshTrayMenu();
   updateRenderer();
   return { ok: true, filePath: result.filePaths[0], count: imported.length, total: merged.size };
 });
 safeHandle("app:list-system-processes", async () => listMatchedSystemProcesses(loadCommands(), getStatuses()));
 safeHandle("app:kill-system-process", async (_event, pid) => await killSystemProcess(pid, terminateProcess));
+safeHandle("app:get-global-logs", async (_event, options) => {
+  return buildGlobalLogEntries(loadCommands(), loadRuntime(), options || {});
+});
+safeHandle("app:clear-operation-logs", async () => {
+  clearOperationLog();
+  return { ok: true };
+});
+safeHandle("app:export-global-logs", async (_event, options) => {
+  const entries = buildGlobalLogEntries(loadCommands(), loadRuntime(), options || {});
+  const result = await dialog.showSaveDialog(mainWindow, {
+    title: "Export global logs",
+    defaultPath: path.join(app.getPath("documents"), `command-hub-logs-${Date.now()}.json`),
+    filters: [{ name: "JSON", extensions: ["json"] }]
+  });
+  if (result.canceled || !result.filePath) return { ok: false, canceled: true };
+  fs.writeFileSync(result.filePath, JSON.stringify({ exportedAt: nowIso(), entries }, null, 2), "utf8");
+  logEvent({
+    category: "operation",
+    level: "success",
+    title: "Global logs exported",
+    summary: `Exported ${entries.length} log entries.`,
+    details: { filePath: result.filePath }
+  });
+  return { ok: true, filePath: result.filePath, count: entries.length };
+});
 safeHandle("app:check-for-updates", async () => {
   try {
     const result = await autoUpdater.checkForUpdates();
