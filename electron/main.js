@@ -1,5 +1,7 @@
 ﻿const { app, BrowserWindow, dialog, ipcMain, Menu, Tray, nativeImage, nativeTheme, shell } = require("electron");
 const path = require("node:path");
+
+Menu.setApplicationMenu(null);
 const { autoUpdater } = require("electron-updater");
 const fs = require("node:fs");
 const { execFile, execFileSync, spawn } = require("node:child_process");
@@ -12,7 +14,7 @@ const { killSystemProcess, listMatchedSystemProcesses, getWindowsPowerShellPath 
 const isDev = !app.isPackaged;
 const processes = new Map();
 const DEFAULT_SETTINGS = {
-  closeToTray: true,
+  closeToTray: false,
   launchAtLogin: false,
   language: "zh-CN",
   logMode: "overwrite",

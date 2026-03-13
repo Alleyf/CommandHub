@@ -45,7 +45,7 @@
           ]
         }
       ],
-      "icon": "electron/assets/icon.ico",
+      "icon": "electron/assets/icon-256.png",
       "signAndEditExecutable": false
     },
     "nsis": {
@@ -55,7 +55,9 @@
       "deleteAppDataOnUninstall": true,
       "include": "scripts/installer.nsh",
       "createDesktopShortcut": true,
-      "createStartMenuShortcut": true
+      "createStartMenuShortcut": true,
+      "installerIcon": "electron/assets/icon.ico",
+      "uninstallerIcon": "electron/assets/icon.ico"
     },
     "linux": {
       "icon": "electron/assets/icon-256.png",
