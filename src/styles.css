@@ -640,10 +640,35 @@ button { border: 0; cursor: pointer; }
 }
 
 .row-title {
-  font-weight: 700;
-  font-size: 13px;
-  text-align: left;
-}
+    font-weight: 700;
+    font-size: 13px;
+    text-align: left;
+  }
+
+.drag-handle {
+    width: 20px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    cursor: grab;
+    user-select: none;
+    opacity: 0.6;
+    transition: opacity 0.2s;
+  }
+
+.drag-handle:hover {
+    opacity: 1;
+  }
+
+.dragging .drag-handle {
+    cursor: grabbing;
+  }
+
+.drag-handle::before {
+    content: "⋮";
+    font-size: 16px;
+    color: var(--muted);
+  }
 
 .row-sub {
   color: var(--muted);

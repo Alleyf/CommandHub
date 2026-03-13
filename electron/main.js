@@ -677,10 +677,6 @@ safeHandle("app:import-commands", async () => {
 safeHandle("app:list-system-processes", async () => listMatchedSystemProcesses(loadCommands(), getStatuses()));
 safeHandle("app:kill-system-process", async (_event, pid) => await killSystemProcess(pid, terminateProcess));
 safeHandle("app:check-for-updates", async () => {
-  if (isDev) {
-    console.log("[AutoUpdate] Manual check skipped in dev");
-    return { ok: false, error: "Manual updates disabled in development mode" };
-  }
   try {
     const result = await autoUpdater.checkForUpdates();
     return { ok: true, result };
