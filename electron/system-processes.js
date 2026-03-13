@@ -74,6 +74,7 @@ function getCommandAliases(command) {
   const rawName = String(command.name || "").trim();
   const commandPath = String(command.command || "").trim().replace(/^"+|"+$/g, "");
   const executableName = path.basename(commandPath || "");
+  const rawArgs = String(command.args || "").trim();
 
   for (const value of [rawName, executableName, executableName.replace(/\.[^.]+$/, "")]) {
     const normalized = normalizeProcessLabel(value);
@@ -81,6 +82,11 @@ function getCommandAliases(command) {
   }
 
   for (const token of rawName.split(/[\s_\-]+/)) {
+    const normalized = normalizeProcessLabel(token);
+    if (normalized.length >= 3) aliases.add(normalized);
+  }
+
+  for (const token of `${commandPath} ${rawArgs}`.split(/[\s"'=:_\-\\/]+/)) {
     const normalized = normalizeProcessLabel(token);
     if (normalized.length >= 3) aliases.add(normalized);
   }
@@ -103,23 +109,47 @@ function matchProcessToCommand(processItem, commandMatchers, runtimePidMap) {
     };
   }
 
+  let ancestorPid = processItem.parentPid;
+  while (ancestorPid) {
+    const ancestorMatch = runtimePidMap.get(ancestorPid);
+    if (ancestorMatch) {
+      return {
+        matchedCommandId: ancestorMatch.id,
+        matchedCommandName: ancestorMatch.name,
+        matchedGroup: ancestorMatch.group || "",
+        matchedState: ancestorMatch.state || "stopped",
+        matchType: "descendant",
+        isManaged: true
+      };
+    }
+    const nextAncestor = processItem.processIndex?.get(ancestorPid);
+    if (!nextAncestor || nextAncestor.pid === ancestorPid) break;
+    ancestorPid = nextAncestor.parentPid;
+  }
+
   const processName = normalizeProcessLabel(processItem.name);
-  if (!processName) return null;
+  const processPath = normalizeProcessLabel(processItem.path);
+  const commandLine = normalizeProcessLabel(processItem.commandLine);
+  const searchable = [commandLine, processPath, processName].filter(Boolean);
+  if (searchable.length === 0) return null;
 
   for (const matcher of commandMatchers) {
-    if (matcher.aliases.some((alias) => alias === processName || alias.startsWith(processName) || processName.startsWith(alias))) {
+    const directAlias = matcher.aliases.find((alias) => (
+      searchable.some((value) => value === alias || value.startsWith(alias) || alias.startsWith(value))
+    ));
+    if (directAlias) {
       return {
         matchedCommandId: matcher.id,
         matchedCommandName: matcher.name,
         matchedGroup: matcher.group || "",
         matchedState: matcher.state || "stopped",
-        matchType: "name",
+        matchType: commandLine.includes(directAlias) ? "commandLine" : "name",
         isManaged: true
       };
     }
     if (matcher.aliases.some((alias) => {
       if (!alias || alias.length < 2) return false;
-      return processName.includes(alias) || alias.includes(processName);
+      return searchable.some((value) => value.includes(alias) || alias.includes(value));
     })) {
       return {
         matchedCommandId: matcher.id,
@@ -144,11 +174,14 @@ function mapWindowsProcessItems(processes) {
       const workingSetBytes = Number(item.WS ?? item.WorkingSetSize);
       const memoryValue = workingSetBytes / (1024 * 1024);
       const cpuValue = Number(item.CPU);
+      const parentPid = Number(item.ParentProcessId);
 
       return {
         pid,
+        parentPid: Number.isFinite(parentPid) ? parentPid : null,
         name: normalizedName,
         path: item.Path || item.ExecutablePath || "",
+        commandLine: item.CommandLine || "",
         memory: formatProcessMemory(memoryValue),
         memoryValue: Number.isFinite(memoryValue) ? memoryValue : null,
         cpu: Number.isFinite(cpuValue) ? `${cpuValue.toFixed(1)} s` : "--",
@@ -161,16 +194,28 @@ function mapWindowsProcessItems(processes) {
 function listWindowsProcessesViaPowerShell() {
   const script = `
 [Console]::OutputEncoding = [System.Text.Encoding]::UTF8
-$items = Get-Process -ErrorAction SilentlyContinue | ForEach-Object {
-  $proc = $_
+$processIndex = @{}
+Get-Process -ErrorAction SilentlyContinue | ForEach-Object {
   $path = ""
-  try { $path = $proc.Path } catch {}
-  [PSCustomObject]@{
-    Id = $proc.Id
-    ProcessName = $proc.ProcessName
-    CPU = $proc.CPU
+  try { $path = $_.Path } catch {}
+  $processIndex[$_.Id] = [PSCustomObject]@{
+    Id = $_.Id
+    ProcessName = $_.ProcessName
+    CPU = $_.CPU
     Path = $path
-    WS = $proc.WS
+    WS = $_.WS
+  }
+}
+$items = Get-CimInstance Win32_Process -ErrorAction SilentlyContinue | ForEach-Object {
+  $details = $processIndex[$_.ProcessId]
+  [PSCustomObject]@{
+    Id = $_.ProcessId
+    ParentProcessId = $_.ParentProcessId
+    ProcessName = if ($details) { $details.ProcessName } else { $_.Name }
+    CPU = if ($details) { $details.CPU } else { $null }
+    Path = if ($_.ExecutablePath) { $_.ExecutablePath } elseif ($details) { $details.Path } else { "" }
+    WS = if ($details) { $details.WS } else { $_.WorkingSetSize }
+    CommandLine = $_.CommandLine
   }
 }
 $items | ConvertTo-Json -Compress
@@ -188,6 +233,7 @@ function listWindowsProcessesViaCim() {
 $items = Get-CimInstance Win32_Process -ErrorAction SilentlyContinue | ForEach-Object {
   [PSCustomObject]@{
     ProcessId = $_.ProcessId
+    ParentProcessId = $_.ParentProcessId
     Name = $_.Name
     ExecutablePath = $_.ExecutablePath
     WorkingSetSize = $_.WorkingSetSize
@@ -231,8 +277,10 @@ function listSystemProcesses() {
           const [imageName, pid, sessionName, sessionNumber, memUsage] = parseCsvLine(line);
           return {
             pid: Number(pid),
+            parentPid: null,
             name: imageName,
             path: "",
+            commandLine: "",
             sessionName,
             sessionNumber,
             memory: memUsage,
@@ -255,8 +303,10 @@ function listSystemProcesses() {
         const parts = line.split(/\s+/, 5);
         return {
           pid: Number(parts[0]),
+          parentPid: null,
           name: parts[1] || "",
           path: parts[1] || "",
+          commandLine: "",
           cpu: parts[2] || "--",
           cpuValue: Number(parts[2]) || null,
           memory: parts[3] || "--",
@@ -272,6 +322,7 @@ function listSystemProcesses() {
 
 function listMatchedSystemProcesses(commands, statuses) {
   const systemProcesses = listSystemProcesses();
+  const processIndex = new Map(systemProcesses.map((item) => [item.pid, item]));
   const runtimePidMap = new Map();
   const commandMatchers = commands.map((command) => ({
     id: command.id,
@@ -295,7 +346,7 @@ function listMatchedSystemProcesses(commands, statuses) {
 
   return systemProcesses
     .map((processItem) => {
-      const matched = matchProcessToCommand(processItem, commandMatchers, runtimePidMap);
+      const matched = matchProcessToCommand({ ...processItem, processIndex }, commandMatchers, runtimePidMap);
       return {
         ...processItem,
         matchedCommandId: matched?.matchedCommandId || "",
@@ -309,7 +360,10 @@ function listMatchedSystemProcesses(commands, statuses) {
     })
     .sort((left, right) => {
       if (left.isManaged !== right.isManaged) return left.isManaged ? -1 : 1;
-      if (left.matchType !== right.matchType) return left.matchType === "pid" ? -1 : 1;
+      const matchPriority = { pid: 0, descendant: 1, commandLine: 2, name: 3, fuzzy: 4, "": 5 };
+      if ((matchPriority[left.matchType] ?? 99) !== (matchPriority[right.matchType] ?? 99)) {
+        return (matchPriority[left.matchType] ?? 99) - (matchPriority[right.matchType] ?? 99);
+      }
       return String(left.name || "").localeCompare(String(right.name || ""));
     });
 }

@@ -20,7 +20,36 @@ import {
   buildVirtualProcessRows,
   getVirtualSlice
 } from "./process-utils";
+import { COMMAND_TEMPLATES } from "./command-templates";
 import ParticleCommandStage from "./ParticleCommandStage";
+import {
+  AlertTriangle,
+  Bot,
+  Boxes,
+  CheckCircle2,
+  Cpu,
+  Database,
+  Download,
+  FolderSearch,
+  Layers3,
+  LayoutList,
+  Logs,
+  Orbit,
+  Pencil,
+  Play,
+  Plus,
+  RotateCcw,
+  ScanSearch,
+  Search,
+  Settings2,
+  Sparkles,
+  Square,
+  ToggleLeft,
+  Star,
+  TerminalSquare,
+  Trash2,
+  Upload
+} from "lucide-react";
 
 function Metric({ label, value, hint, tone }) {
   return (
@@ -32,7 +61,7 @@ function Metric({ label, value, hint, tone }) {
   );
 }
 
-function SelectField({ value, options, onChange, placeholder, className = "", disabled = false }) {
+function SelectField({ value, options, onChange, placeholder, className = "", disabled = false, icon: Icon = null, compact = false }) {
   const [open, setOpen] = useState(false);
   const rootRef = useRef(null);
   const selected = options.find((option) => option.value === value);
@@ -52,10 +81,15 @@ function SelectField({ value, options, onChange, placeholder, className = "", di
     <div ref={rootRef} className={`select-shell ${open ? "open" : ""} ${className}`.trim()}>
       <button
         type="button"
-        className="select-trigger"
+        className={`select-trigger ${compact ? "select-trigger-compact" : ""}`.trim()}
         disabled={disabled}
         onClick={() => !disabled && setOpen((current) => !current)}
       >
+        {Icon && (
+          <span className="select-leading-icon" aria-hidden="true">
+            <Icon size={15} strokeWidth={2} />
+          </span>
+        )}
         <span className={`select-value ${selected ? "" : "placeholder"}`}>{selected?.label || placeholder}</span>
         <span className="select-chevron">{open ? "▴" : "▾"}</span>
       </button>
@@ -102,18 +136,42 @@ function LogoMark() {
   );
 }
 
+function NavIcon({ view }) {
+  if (view === "commands") return <Bot size={16} strokeWidth={2.1} />;
+  if (view === "library") return <Boxes size={16} strokeWidth={2.1} />;
+  if (view === "logs") return <Logs size={16} strokeWidth={2.1} />;
+  return <Settings2 size={16} strokeWidth={2.1} />;
+}
+
+function getLibraryMeta(library) {
+  const key = String(library || "").toLowerCase();
+  if (key.includes("openclaw")) return { icon: Bot, tone: "library-openclaw" };
+  if (key.includes("jupiter")) return { icon: Sparkles, tone: "library-jupiter" };
+  if (key.includes("node")) return { icon: Boxes, tone: "library-node" };
+  if (key.includes("python")) return { icon: TerminalSquare, tone: "library-python" };
+  if (key.includes("java")) return { icon: Cpu, tone: "library-java" };
+  if (key.includes("go")) return { icon: Orbit, tone: "library-go" };
+  if (key.includes("docker")) return { icon: Boxes, tone: "library-docker" };
+  if (key.includes("database")) return { icon: Database, tone: "library-db" };
+  return { icon: FolderSearch, tone: "library-generic" };
+}
+
 function App() {
   const [commands, setCommands] = useState([]);
   const [statuses, setStatuses] = useState({});
+  const [usageStats, setUsageStats] = useState({ counts: {}, lastUsed: {} });
   const [systemProcesses, setSystemProcesses] = useState([]);
   const [settings, setSettings] = useState({
     closeToTray: true,
     launchAtLogin: false,
     language: "zh-CN",
     compactList: true,
+    quietMode: false,
+    errorReminder: true,
     themeMode: "system",
     particleMode: false,
-    gestureMode: false
+    gestureMode: false,
+    onboardingCompleted: false
   });
   const [systemTheme, setSystemTheme] = useState("dark");
   const [selectedId, setSelectedId] = useState("");
@@ -147,6 +205,10 @@ function App() {
   const [globalLogCommandId, setGlobalLogCommandId] = useState("");
   const [logsLoaded, setLogsLoaded] = useState(false);
   const [selectedLogId, setSelectedLogId] = useState("");
+  const [templateMatches, setTemplateMatches] = useState([]);
+  const [templateScanBusy, setTemplateScanBusy] = useState(false);
+  const [onboardingOpen, setOnboardingOpen] = useState(false);
+  const [onboardingStep, setOnboardingStep] = useState(0);
   const [columnWidths, setColumnWidths] = useState({
     name: 2.2,
     status: 1,
@@ -161,6 +223,7 @@ function App() {
   const inlineLogViewRef = useRef(null);
   const drawerLogViewRef = useRef(null);
   const processBodyRef = useRef(null);
+  const refreshInFlightRef = useRef(null);
 
   const language = settings.language || "zh-CN";
   const copy = APP_MESSAGES[language] || APP_MESSAGES["zh-CN"];
@@ -173,21 +236,37 @@ function App() {
   }
 
   async function refreshState() {
+    if (refreshInFlightRef.current) {
+      return refreshInFlightRef.current;
+    }
+    refreshInFlightRef.current = (async () => {
     const state = await window.commandHub.getState();
     setCommands(state.commands);
     setStatuses(state.statuses);
+    setUsageStats(state.usageStats || { counts: {}, lastUsed: {} });
     setSettings((current) => ({
       compactList: true,
+      quietMode: false,
+      errorReminder: true,
       themeMode: "system",
       particleMode: false,
       gestureMode: false,
+      onboardingCompleted: false,
       ...current,
       ...state.settings
     }));
     setSelectedId((current) => current || state.commands[0]?.id || "");
+    setOnboardingOpen(!state.settings?.onboardingCompleted);
+    })().finally(() => {
+      refreshInFlightRef.current = null;
+    });
+    return refreshInFlightRef.current;
   }
 
   function showActionStatus(message, type = "success") {
+    if (settings.quietMode && type !== "error") {
+      return;
+    }
     setActionStatus({ message, type });
     window.clearTimeout(showActionStatus.timerId);
     showActionStatus.timerId = window.setTimeout(() => {
@@ -210,10 +289,8 @@ function App() {
   useEffect(() => {
     refreshState();
     const dispose = window.commandHub.onRuntimeUpdated(refreshState);
-    const timer = window.setInterval(refreshState, 1500);
     return () => {
       dispose?.();
-      window.clearInterval(timer);
     };
   }, []);
 
@@ -365,6 +442,19 @@ function App() {
   }, [selectedStatus?.logPath, statuses, selectedId]);
 
   useEffect(() => {
+    if (!selectedStatus?.logPath) return undefined;
+    const shouldPoll = selectedStatus?.state === "running" || detailTab === "log" || logPanelOpen;
+    if (!shouldPoll) return undefined;
+
+    const timer = window.setInterval(async () => {
+      const text = await window.commandHub.getLogTail(selectedStatus.logPath);
+      setLogTail(stripAnsiSequences(text));
+    }, 1200);
+
+    return () => window.clearInterval(timer);
+  }, [detailTab, logPanelOpen, selectedStatus?.logPath, selectedStatus?.state]);
+
+  useEffect(() => {
     if (!autoScrollLogs) return;
 
     const syncToBottom = () => {
@@ -389,6 +479,32 @@ function App() {
     const running = Object.values(statuses).filter((item) => item.state === "running").length;
     return { total: commands.length, running, idle: Math.max(0, commands.length - running) };
   }, [commands, statuses]);
+
+  const favoriteCommands = useMemo(() => commands.filter((item) => item.isFavorite), [commands]);
+  const recentCommands = useMemo(() => {
+    const lastUsed = usageStats?.lastUsed || {};
+    return [...commands]
+      .filter((item) => lastUsed[item.id])
+      .sort((left, right) => new Date(lastUsed[right.id]).getTime() - new Date(lastUsed[left.id]).getTime())
+      .slice(0, 5);
+  }, [commands, usageStats]);
+
+  async function runCommandAction(task, successMessage) {
+    try {
+      const result = await task();
+      if (result?.state === "error") {
+        const message = [result.message, result.hint].filter(Boolean).join(" · ");
+        showActionStatus(message || t("actionFailed", { error: "Unknown error" }), "error");
+      } else if (successMessage) {
+        showActionStatus(successMessage, "success");
+      }
+      await refreshState();
+      return result;
+    } catch (error) {
+      showActionStatus(t("actionFailed", { error: error.message || String(error) }), "error");
+      throw error;
+    }
+  }
 
   function openCreate() {
     const initialGroup = selectedGroup || "";
@@ -415,6 +531,8 @@ function App() {
       args: form.args.trim(),
       cwd: form.cwd.trim(),
       group: form.group.trim(),
+      accentTone: form.accentTone || "teal",
+      isFavorite: Boolean(form.isFavorite),
       env: toEnvMap(form.envText),
       autoRestart: false,
       createdAt: existing?.createdAt || nowIso(),
@@ -422,7 +540,8 @@ function App() {
       lastStartedAt: existing?.lastStartedAt || null,
       lastExitCode: existing?.lastExitCode ?? null,
       lastStoppedAt: existing?.lastStoppedAt || null,
-      lastState: existing?.lastState || "stopped"
+      lastState: existing?.lastState || "stopped",
+      lastHint: existing?.lastHint || ""
     };
     await window.commandHub.saveCommand(payload);
     setSelectedId(payload.id);
@@ -438,32 +557,28 @@ function App() {
 
   async function startSelected() {
     if (!selected) return;
-    await window.commandHub.startCommand(selected);
-    await refreshState();
+    await runCommandAction(() => window.commandHub.startCommand(selected), t("commandStarted", { name: selected.name }));
   }
 
   async function stopSelected() {
     if (!selected) return;
-    await window.commandHub.stopCommand(selected.id);
-    await refreshState();
+    await runCommandAction(() => window.commandHub.stopCommand(selected.id), t("commandStopped", { name: selected.name }));
   }
 
   async function startCommandItem(command) {
     if (!command) return;
-    await window.commandHub.startCommand(command);
-    await refreshState();
+    await runCommandAction(() => window.commandHub.startCommand(command), t("commandStarted", { name: command.name }));
   }
 
   async function stopCommandItem(commandId) {
     if (!commandId) return;
-    await window.commandHub.stopCommand(commandId);
-    await refreshState();
+    const target = commands.find((item) => item.id === commandId);
+    await runCommandAction(() => window.commandHub.stopCommand(commandId), t("commandStopped", { name: target?.name || "--" }));
   }
 
   async function restartSelected() {
     if (!selected) return;
-    await window.commandHub.restartCommand(selected);
-    await refreshState();
+    await runCommandAction(() => window.commandHub.restartCommand(selected), t("commandRestarted", { name: selected.name }));
   }
 
   async function toggleSelectedRuntime() {
@@ -522,6 +637,37 @@ function App() {
     setSettings(persisted);
   }
 
+  async function completeOnboarding() {
+    setOnboardingOpen(false);
+    setOnboardingStep(0);
+    if (!settings.onboardingCompleted) {
+      const persisted = await window.commandHub.saveSettings({ ...settings, onboardingCompleted: true });
+      setSettings(persisted);
+    }
+  }
+
+  function reopenOnboarding() {
+    setOnboardingStep(0);
+    setOnboardingOpen(true);
+  }
+
+  async function updateCommandMeta(commandId, patch) {
+    const target = commands.find((item) => item.id === commandId);
+    if (!target) return;
+    await window.commandHub.saveCommand({
+      ...target,
+      ...patch,
+      updatedAt: nowIso()
+    });
+    await refreshState();
+  }
+
+  async function toggleFavorite(commandId) {
+    const target = commands.find((item) => item.id === commandId);
+    if (!target) return;
+    await updateCommandMeta(commandId, { isFavorite: !target.isFavorite });
+  }
+
   async function importCommands() {
     try {
       const result = await window.commandHub.importCommands();
@@ -543,6 +689,38 @@ function App() {
     } catch (error) {
       showActionStatus(t("actionFailed", { error: error.message || String(error) }), "error");
     }
+  }
+
+  async function scanTemplateLibraries() {
+    setTemplateScanBusy(true);
+    try {
+      const result = await window.commandHub.scanTemplateLibraries(COMMAND_TEMPLATES);
+      setTemplateMatches(result?.matches || []);
+      setActiveView("library");
+    } catch (error) {
+      showActionStatus(t("actionFailed", { error: error.message || String(error) }), "error");
+    } finally {
+      setTemplateScanBusy(false);
+    }
+  }
+
+  function applyTemplate(template) {
+    const payload = {
+      ...EMPTY_FORM,
+      id: uid(),
+      name: template.name,
+      command: template.detectedCommand || template.command,
+      args: template.args || "",
+      cwd: template.cwd || "",
+      envText: template.envText || "",
+      group: template.group || "",
+      accentTone: template.accentTone || "teal",
+      isFavorite: false
+    };
+    setForm(payload);
+    setGroupSelectValue(payload.group && groups.includes(payload.group) ? payload.group : payload.group ? NEW_GROUP_VALUE : "");
+    setActiveView("commands");
+    setDrawerOpen(true);
   }
 
   async function exportGlobalLogs() {
@@ -714,12 +892,14 @@ function App() {
         [t("pid"), selectedStatus?.pid || "--"],
         [t("uptime"), uptime(selectedStatus?.startedAt)],
         [t("lastStarted"), formatDate(selected.lastStartedAt)],
+        [t("lastUsed"), formatDate(usageStats?.lastUsed?.[selected.id])],
         [t("exitCode"), selected.lastExitCode ?? "--"],
+        [t("failureHint"), selectedStatus?.hint || selected.lastHint || "--"],
         [t("stateNote"), selectedStatus?.message || t("statusReady")]
       ]
     : [];
 
-  const navItems = [["commands", t("navCommands")], ["logs", t("navLogs")], ["settings", t("navSettings")]];
+  const navItems = [["commands", t("navCommands")], ["library", t("navLibrary")], ["logs", t("navLogs")], ["settings", t("navSettings")]];
   const stateOptions = [["", t("allStates")], ["running", t("stateRunning")], ["stopped", t("stateStopped")], ["error", t("stateError")]];
   const stateSelectOptions = stateOptions.map(([value, label]) => ({ value, label }));
   const groupFilterOptions = [{ value: "", label: t("allGroups") }, ...groups.map((group) => ({ value: group, label: group || t("noGroup") }))];
@@ -733,9 +913,36 @@ function App() {
     { value: "zh-CN", label: "简体中文" },
     { value: "en-US", label: "English" }
   ];
+  const onboardingSteps = [
+    {
+      title: t("onboardingStepCommandsTitle"),
+      body: t("onboardingStepCommandsBody"),
+      actionLabel: t("onboardingOpenCommands"),
+      action: () => setActiveView("commands")
+    },
+    {
+      title: t("onboardingStepLibraryTitle"),
+      body: t("onboardingStepLibraryBody"),
+      actionLabel: t("onboardingOpenLibrary"),
+      action: () => setActiveView("library")
+    },
+    {
+      title: t("onboardingStepModesTitle"),
+      body: t("onboardingStepModesBody"),
+      actionLabel: t("onboardingOpenSettings"),
+      action: () => setActiveView("settings")
+    }
+  ];
+  const currentOnboardingStep = onboardingSteps[onboardingStep] || onboardingSteps[0];
   const logModeOptions = [
     { value: "overwrite", label: t("logModeOverwrite") },
     { value: "append", label: t("logModeAppend") }
+  ];
+  const accentOptions = [
+    { value: "teal", label: t("accentTeal") },
+    { value: "gold", label: t("accentGold") },
+    { value: "coral", label: t("accentCoral") },
+    { value: "slate", label: t("accentSlate") }
   ];
   const globalLogTypeOptions = [
     { value: "", label: t("allLogTypes") },
@@ -804,7 +1011,7 @@ function App() {
         <div className="nav-stack">
           {navItems.map(([id, label]) => (
             <button key={id} className={`btn btn-md nav-button ${activeView === id ? "active" : ""}`} onClick={() => setActiveView(id)}>
-              {label}
+              <span className="nav-button-inner"><NavIcon view={id} />{label}</span>
             </button>
           ))}
         </div>
@@ -831,21 +1038,43 @@ function App() {
           <>
             {commandsTab === "commands" ? (
               <section className="hero">
-                <div>
+                <div className="hero-copy">
                   <div className="eyebrow">{t("operationsDeck")}</div>
                   <h2>{t("heroTitle")}</h2>
-                  <p>{t("heroDesc")}</p>
+                  <p className="hero-copy-line">{t("heroDesc")}</p>
                 </div>
-                <div className="hero-tools">
-                  <input className="search" value={search} onChange={(event) => setSearch(event.target.value)} placeholder={t("searchPlaceholder")} />
-                  <div className="hero-row triple">
-                    <SelectField className="group-select" value={selectedGroup} options={groupFilterOptions} onChange={setSelectedGroup} placeholder={t("allGroups")} />
-                    <SelectField className="group-select" value={selectedState} options={stateSelectOptions} onChange={setSelectedState} placeholder={t("allStates")} />
-                    <button className="btn btn-md ghost" onClick={() => window.commandHub.openLogFolder()}>{t("openLogs")}</button>
+                <div className="hero-toolbar">
+                  <label className="toolbar-search-shell">
+                    <Search size={15} />
+                    <input className="search toolbar-search-input" value={search} onChange={(event) => setSearch(event.target.value)} placeholder={t("searchPlaceholder")} />
+                  </label>
+                  <div className="hero-filter-row">
+                    <SelectField
+                      className="group-select toolbar-filter"
+                      value={selectedGroup}
+                      options={groupFilterOptions}
+                      onChange={setSelectedGroup}
+                      placeholder={t("allGroups")}
+                      icon={Layers3}
+                      compact
+                    />
+                    <SelectField
+                      className="group-select toolbar-filter"
+                      value={selectedState}
+                      options={stateSelectOptions}
+                      onChange={setSelectedState}
+                      placeholder={t("allStates")}
+                      icon={ToggleLeft}
+                      compact
+                    />
                   </div>
-                  <div className="hero-row">
-                    <button className="btn btn-md teal" onClick={startVisibleGroup}>{t("startAll")}</button>
-                    <button className="btn btn-md secondary" onClick={stopVisibleGroup}>{t("stopAll")}</button>
+                  <div className="hero-action-row">
+                    <button className="btn btn-sm teal hero-icon-button" onClick={startVisibleGroup} title={t("startAll")} aria-label={t("startAll")}>
+                      <Play size={15} />
+                    </button>
+                    <button className="btn btn-sm secondary hero-icon-button" onClick={stopVisibleGroup} title={t("stopAll")} aria-label={t("stopAll")}>
+                      <Square size={15} />
+                    </button>
                   </div>
                 </div>
               </section>
@@ -870,6 +1099,64 @@ function App() {
               </section>
             )}
 
+            {commandsTab === "commands" && (
+              <section className="shortcut-band">
+                <div className="recent-strip recent-strip-inline">
+                  <div className="recent-strip-copy inline">
+                    <div className="section-title">{t("favorites")}</div>
+                  </div>
+                  <div className="recent-strip-actions">
+                    {favoriteCommands.length === 0 ? (
+                      <div className="row-sub">{t("noFavorites")}</div>
+                    ) : (
+                      favoriteCommands.slice(0, 5).map((item) => (
+                        <button
+                          key={`favorite-${item.id}`}
+                          className={`btn btn-sm ghost recent-chip accent-chip accent-${item.accentTone || "teal"}`}
+                          onClick={() => {
+                            setSelectedId(item.id);
+                            const state = statuses[item.id]?.state || "stopped";
+                            if (state === "running") {
+                              stopCommandItem(item.id);
+                            } else {
+                              startCommandItem(item);
+                            }
+                          }}
+                        >
+                          <Star size={12} />
+                          <span>{item.name}</span>
+                        </button>
+                      ))
+                    )}
+                  </div>
+                </div>
+                <div className="recent-strip recent-strip-inline">
+                  <div className="recent-strip-copy inline">
+                    <div className="section-title">{t("recentCommands")}</div>
+                  </div>
+                  <div className="recent-strip-actions">
+                    {recentCommands.length === 0 ? (
+                      <div className="row-sub">{t("noRecentCommands")}</div>
+                    ) : (
+                      recentCommands.map((item) => (
+                        <button
+                          key={`recent-${item.id}`}
+                          className={`btn btn-sm ghost recent-chip accent-chip accent-${item.accentTone || "teal"}`}
+                          onClick={() => {
+                            setSelectedId(item.id);
+                            startCommandItem(item);
+                          }}
+                        >
+                          <span>{item.name}</span>
+                          <span className="recent-chip-time">{formatDate(usageStats?.lastUsed?.[item.id])}</span>
+                        </button>
+                      ))
+                    )}
+                  </div>
+                </div>
+              </section>
+            )}
+
             <div className="subtabs">
               <button className={`btn btn-sm subtab ${commandsTab === "commands" ? "active" : ""}`} onClick={() => setCommandsTab("commands")}>
                 {t("commandTab")}
@@ -884,17 +1171,23 @@ function App() {
               <div className="inventory card">
                 <div className="section-head split-head">
                   <div>
-                    <div className="section-title">{t("managedInventory")}</div>
+                    <div className="section-title section-title-with-icon"><TerminalSquare size={14} />{t("managedInventory")}</div>
                     <div className="section-copy">{t("visibleTotal", { visible: sortedCommands.length, total: commands.length })}</div>
                   </div>
                   <div className="inventory-actions">
                     <div className="section-copy right-copy">{t("listSummary")}</div>
-                    <div className="toolbar-buttons">
-                      <button className="btn btn-sm ghost" onClick={importCommands}>{t("importCommands")}</button>
-                      <button className="btn btn-sm ghost" onClick={exportCommands}>{t("exportCommands")}</button>
-                      <button className="btn btn-sm primary" onClick={openCreate}>{t("newCommand")}</button>
-                      <button className="btn btn-sm ghost" onClick={openEdit} disabled={!selected}>{t("editSelected")}</button>
-                      <button className="btn btn-sm danger" onClick={removeSelected} disabled={!selected}>{t("deleteSelected")}</button>
+                    <div className="detail-header-actions">
+                      <button className={`btn btn-sm ghost ${!effectiveParticleMode ? "active-chip" : ""}`} onClick={() => saveSetting("particleMode", false)}>
+                        <LayoutList size={14} />{t("commandTab")}
+                      </button>
+                      <button className={`btn btn-sm ghost ${effectiveParticleMode ? "active-chip" : ""}`} onClick={() => saveSetting("particleMode", true)}>
+                        <Orbit size={14} />{t("particleStageTitle")}
+                      </button>
+                    </div>
+                    <div className="toolbar-buttons compact-actions">
+                      <button className="btn btn-sm primary" onClick={openCreate}><Plus size={14} />{t("newCommand")}</button>
+                      <button className="btn btn-sm ghost" onClick={openEdit} disabled={!selected}><Pencil size={14} />{t("editSelected")}</button>
+                      <button className="btn btn-sm danger" onClick={removeSelected} disabled={!selected}><Trash2 size={14} />{t("deleteSelected")}</button>
                     </div>
                   </div>
                 </div>
@@ -934,10 +1227,12 @@ function App() {
                       {sortedCommands.length === 0 && <div className="empty">{t("emptyCommands")}</div>}
                       {sortedCommands.map((item) => {
                         const status = statuses[item.id]?.state || "stopped";
+                        const hint = statuses[item.id]?.hint || item.lastHint || "";
+                        const accentTone = item.accentTone || "teal";
                         return (
                           <button
                             key={item.id}
-                            className={`table-row ${selectedId === item.id ? "selected" : ""}`}
+                            className={`table-row command-row accent-${accentTone} ${item.isFavorite ? "is-favorite" : ""} ${selectedId === item.id ? "selected" : ""}`}
                             onClick={() => setSelectedId(item.id)}
                             onDoubleClick={() => {
                               setSelectedId(item.id);
@@ -946,17 +1241,24 @@ function App() {
                                 const currentState = statuses[item.id]?.state || "stopped";
                                 if (!current) return;
                                 if (currentState === "running") {
-                                  window.commandHub.stopCommand(item.id).then(refreshState);
+                                  stopCommandItem(item.id);
                                 } else {
-                                  window.commandHub.startCommand(current).then(refreshState);
+                                  startCommandItem(current);
                                 }
                               }, 0);
                             }}
                             style={{ gridTemplateColumns: tableTemplate }}
                           >
                             <div className="cell cell-name">
-                              <div className="row-title">{item.name}</div>
+                              <div className="row-title">
+                                {item.isFavorite && <Star size={12} className="favorite-star" />}
+                                <span>{item.name}</span>
+                              </div>
                               <div className="row-sub">{item.command}</div>
+                              <div className="row-sub">
+                                {status === "running" ? `${t("uptime")}: ${uptime(statuses[item.id]?.startedAt)}` : `${t("lastUsed")}: ${formatDate(usageStats?.lastUsed?.[item.id])}`}
+                              </div>
+                              {hint && status === "error" && <div className="row-sub row-sub-warning">{hint}</div>}
                             </div>
                             <div className="cell"><span className={`badge badge-${status}`}>{status}</span></div>
                             <div className="cell">{item.group || t("noGroup")}</div>
@@ -1123,6 +1425,12 @@ function App() {
                         <>
                           <h3>{selected.name}</h3>
                           <pre className="command-preview">{[selected.command, selected.args].filter(Boolean).join(" ")}</pre>
+                          {selectedStatus?.hint && (
+                            <div className="hint-banner">
+                              <AlertTriangle size={16} />
+                              <span>{selectedStatus.hint}</span>
+                            </div>
+                          )}
                           {detailTab === "info" ? (
                             <div className="detail-grid">
                               {detailRows.map(([label, value]) => (
@@ -1160,6 +1468,9 @@ function App() {
                         <button className="btn btn-md teal" onClick={startSelected} disabled={!selected}>{t("start")}</button>
                         <button className="btn btn-md secondary" onClick={stopSelected} disabled={!selected}>{t("stop")}</button>
                         <button className="btn btn-md secondary" onClick={restartSelected} disabled={!selected}>{t("restart")}</button>
+                        <button className={`btn btn-md ghost ${selected?.isFavorite ? "favorite-toggle-active" : ""}`} onClick={() => selected && toggleFavorite(selected.id)} disabled={!selected}>
+                          <Star size={14} />{selected?.isFavorite ? t("unfavorite") : t("favorite")}
+                        </button>
                       </div>
                     </div>
                   </>
@@ -1252,6 +1563,85 @@ function App() {
           </section>
         )}
 
+        {activeView === "library" && (
+          <section className="single-panel">
+            <div className="content-grid library-layout">
+              <div className="card panel-card logs-panel">
+                <div className="split-head">
+                  <div>
+                    <div className="section-title section-title-with-icon"><FolderSearch size={14} />{t("libraryTitle")}</div>
+                    <div className="section-copy">{t("libraryDesc")}</div>
+                  </div>
+                  <div className="toolbar-buttons">
+                    <button className="btn btn-sm primary" onClick={scanTemplateLibraries} disabled={templateScanBusy}><ScanSearch size={14} />{t("scanEnvironment")}</button>
+                    <button className="btn btn-sm ghost" onClick={importCommands}><Upload size={14} />{t("importCommands")}</button>
+                    <button className="btn btn-sm ghost" onClick={exportCommands}><Download size={14} />{t("exportCommands")}</button>
+                  </div>
+                </div>
+                <div className="template-scan-banner">
+                  <Sparkles size={16} />
+                  <span>{t("scanEnvironmentDesc")}</span>
+                </div>
+                <div className="template-grid">
+                  {(templateMatches.length > 0 ? templateMatches : COMMAND_TEMPLATES).map((template) => {
+                    const meta = getLibraryMeta(template.library || template.group);
+                    const LibraryIcon = meta.icon;
+                    return (
+                      <div key={`${template.id}-${template.detectedPath || "library"}`} className={`template-card ${meta.tone}`}>
+                        <div className="template-card-top">
+                          <div className="template-library-pill">
+                            <LibraryIcon size={15} />
+                            <span>{template.library || template.group || "Template"}</span>
+                          </div>
+                          {template.detectedPath && <span className="template-path mono">{template.detectedPath}</span>}
+                        </div>
+                        <div className="template-card-title">{template.name}</div>
+                        <div className="section-copy">{template.description?.[language] || template.description?.["zh-CN"] || ""}</div>
+                        <pre className="command-preview template-preview">{[template.command, template.args].filter(Boolean).join(" ")}</pre>
+                        <button className="btn btn-sm ghost strong-ghost" onClick={() => applyTemplate(template)}><Plus size={14} />{t("useTemplate")}</button>
+                      </div>
+                    );
+                  })}
+                </div>
+              </div>
+
+              <div className="detail-rail">
+                <div className="card detail-card template-detected-card">
+                  <div className="section-title section-title-with-icon"><ScanSearch size={14} />{t("detectedTemplates")}</div>
+                  {templateMatches.length > 0 ? (
+                    <div className="template-match-list">
+                      {templateMatches.map((template) => {
+                        const meta = getLibraryMeta(template.library || template.group);
+                        const LibraryIcon = meta.icon;
+                        return (
+                          <button key={`${template.id}-${template.detectedPath || "detected"}`} className={`log-row template-match-row ${meta.tone}`} onClick={() => applyTemplate(template)}>
+                            <div className="log-row-top">
+                              <div className="log-row-badges">
+                                <span className="template-library-pill"><LibraryIcon size={14} />{template.library || template.group || "Template"}</span>
+                                <span className="log-level-pill log-level-success"><CheckCircle2 size={14} />detected</span>
+                              </div>
+                            </div>
+                            <div className="log-row-title">{template.name}</div>
+                            <div className="row-sub">{template.detectedPath || template.command}</div>
+                          </button>
+                        );
+                      })}
+                    </div>
+                  ) : (
+                    <div className="empty">{t("noTemplateMatches")}</div>
+                  )}
+                </div>
+
+                <div className="card controls-card">
+                  <div className="section-title section-title-with-icon"><Boxes size={14} />{t("builtInTemplates")}</div>
+                  <div className="section-copy">{t("templateDesc")}</div>
+                  <div className="metric-value">{COMMAND_TEMPLATES.length}</div>
+                </div>
+              </div>
+            </div>
+          </section>
+        )}
+
         {activeView === "settings" && (
           <section className="single-panel">
             <div className="card panel-card settings-panel">
@@ -1308,6 +1698,26 @@ function App() {
                 </div>
                 <div className="pref-row">
                   <div className="pref-copy">
+                    <div className="pref-title">{t("quietMode")}</div>
+                    <div className="pref-help">{t("quietModeDesc")}</div>
+                  </div>
+                  <label className="switch">
+                    <input type="checkbox" checked={Boolean(settings.quietMode)} onChange={(event) => saveSetting("quietMode", event.target.checked)} />
+                    <span className="switch-slider" />
+                  </label>
+                </div>
+                <div className="pref-row">
+                  <div className="pref-copy">
+                    <div className="pref-title">{t("errorReminder")}</div>
+                    <div className="pref-help">{t("errorReminderDesc")}</div>
+                  </div>
+                  <label className="switch">
+                    <input type="checkbox" checked={Boolean(settings.errorReminder)} onChange={(event) => saveSetting("errorReminder", event.target.checked)} />
+                    <span className="switch-slider" />
+                  </label>
+                </div>
+                <div className="pref-row">
+                  <div className="pref-copy">
                     <div className="pref-title">{t("compactList")}</div>
                     <div className="pref-help">{t("compactListDesc")}</div>
                   </div>
@@ -1350,11 +1760,68 @@ function App() {
                     {updateStatus.checking ? t("checkingForUpdates") : t("checkForUpdates")}
                   </button>
                 </div>
+                <div className="pref-row">
+                  <div className="pref-copy">
+                    <div className="pref-title">{t("onboardingTitle")}</div>
+                    <div className="pref-help">{t("onboardingSubtitle")}</div>
+                  </div>
+                  <button className="btn btn-md ghost" onClick={reopenOnboarding}>
+                    {t("reopenOnboarding")}
+                  </button>
+                </div>
               </div>
             </div>
           </section>
         )}
       </main>
+
+      {onboardingOpen && (
+        <div className="onboarding-backdrop">
+          <section className="onboarding-modal card" role="dialog" aria-modal="true" aria-label={t("onboardingTitle")}>
+            <div className="onboarding-head">
+              <div className="eyebrow">{t("onboardingTitle")}</div>
+              <button className="btn btn-sm ghost" onClick={completeOnboarding}>{t("onboardingSkip")}</button>
+            </div>
+            <div className="onboarding-copy">
+              <h3>{currentOnboardingStep.title}</h3>
+              <p className="section-copy">{t("onboardingSubtitle")}</p>
+              <p className="onboarding-body">{currentOnboardingStep.body}</p>
+            </div>
+            <div className="onboarding-progress">
+              {onboardingSteps.map((step, index) => (
+                <button
+                  key={step.title}
+                  className={`onboarding-dot ${index === onboardingStep ? "active" : ""}`}
+                  onClick={() => setOnboardingStep(index)}
+                  aria-label={step.title}
+                />
+              ))}
+            </div>
+            <div className="onboarding-actions">
+              <button className="btn btn-sm ghost" onClick={currentOnboardingStep.action}>
+                {currentOnboardingStep.actionLabel}
+              </button>
+              <div className="onboarding-actions-right">
+                <button className="btn btn-sm secondary" onClick={() => setOnboardingStep((current) => Math.max(0, current - 1))} disabled={onboardingStep === 0}>
+                  {t("onboardingBack")}
+                </button>
+                <button
+                  className="btn btn-sm teal"
+                  onClick={() => {
+                    if (onboardingStep >= onboardingSteps.length - 1) {
+                      completeOnboarding();
+                      return;
+                    }
+                    setOnboardingStep((current) => Math.min(onboardingSteps.length - 1, current + 1));
+                  }}
+                >
+                  {onboardingStep >= onboardingSteps.length - 1 ? t("onboardingFinish") : t("onboardingNext")}
+                </button>
+              </div>
+            </div>
+          </section>
+        </div>
+      )}
 
       <div className={`modal-backdrop ${drawerOpen ? "open" : ""}`} onClick={() => setDrawerOpen(false)}>
       <aside className={`drawer ${drawerOpen ? "open" : ""}`} onClick={(event) => event.stopPropagation()}>
@@ -1396,6 +1863,14 @@ function App() {
                   <input value={form.group} placeholder={t("newGroupPlaceholder")} onChange={(event) => setForm({ ...form, group: event.target.value })} />
                 </label>
               )}
+              <label>
+                <span>{t("accentTone")}</span>
+                <SelectField value={form.accentTone || "teal"} options={accentOptions} onChange={(value) => setForm((current) => ({ ...current, accentTone: value }))} placeholder={t("accentTone")} />
+              </label>
+              <label className="checkbox">
+                <input type="checkbox" checked={Boolean(form.isFavorite)} onChange={(event) => setForm((current) => ({ ...current, isFavorite: event.target.checked }))} />
+                <span>{t("favorite")}</span>
+              </label>
             </div>
           </div>
 

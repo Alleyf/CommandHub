@@ -18,6 +18,7 @@ contextBridge.exposeInMainWorld("commandHub", {
   pickDirectory: () => ipcRenderer.invoke("app:pick-directory"),
   exportCommands: () => ipcRenderer.invoke("app:export-commands"),
   importCommands: () => ipcRenderer.invoke("app:import-commands"),
+  scanTemplateLibraries: (templates) => ipcRenderer.invoke("app:scan-template-libraries", templates),
   getGlobalLogs: (options) => ipcRenderer.invoke("app:get-global-logs", options),
   exportGlobalLogs: (options) => ipcRenderer.invoke("app:export-global-logs", options),
   clearOperationLogs: () => ipcRenderer.invoke("app:clear-operation-logs"),

@@ -5,7 +5,9 @@ export const EMPTY_FORM = {
   args: "",
   cwd: "",
   envText: "",
-  group: ""
+  group: "",
+  accentTone: "teal",
+  isFavorite: false
 };
 
 export const NEW_GROUP_VALUE = "__new_group__";
@@ -72,6 +74,8 @@ export function fromCommand(command) {
     args: command?.args || "",
     cwd: command?.cwd || "",
     group: command?.group || "",
+    accentTone: command?.accentTone || "teal",
+    isFavorite: Boolean(command?.isFavorite),
     envText: Object.entries(command?.env || {})
       .map(([key, value]) => `${key}=${value}`)
       .join("\n")

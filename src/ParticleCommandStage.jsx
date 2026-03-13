@@ -65,7 +65,7 @@ function projectNode(node, width, height, time) {
   const z = node.radius * Math.sin(theta) * Math.sin(phi);
   const depth = 420 / (420 + z + 220);
   const screenX = width / 2 + x * depth;
-  const screenY = height / 2 + y * depth;
+  const screenY = height * 0.35 + y * depth;
   return { x, y, z, depth, screenX, screenY };
 }
 
@@ -137,6 +137,7 @@ export default function ParticleCommandStage({
     return values ? format(template, values) : template;
   };
   const nodes = useMemo(() => createCommandNodes(commands), [commands]);
+  const commandMap = useMemo(() => new Map(commands.map((item) => [item.id, item])), [commands]);
   const selectedCommand = useMemo(() => commands.find((item) => item.id === selectedId) || null, [commands, selectedId]);
   const [trackerMode, setTrackerMode] = useState("off");
   const [trackerMessage, setTrackerMessage] = useState(tx("particleGestureOff"));
@@ -287,7 +288,7 @@ export default function ParticleCommandStage({
 
     const resize = () => {
       const rect = canvas.getBoundingClientRect();
-      const ratio = window.devicePixelRatio || 1;
+      const ratio = Math.min(window.devicePixelRatio || 1, 1.25);
       canvas.width = Math.max(1, Math.round(rect.width * ratio));
       canvas.height = Math.max(1, Math.round(rect.height * ratio));
       context.setTransform(ratio, 0, 0, ratio, 0, 0);
@@ -297,8 +298,14 @@ export default function ParticleCommandStage({
     const observer = new ResizeObserver(() => resize());
     observer.observe(canvas);
 
+    let lastPaintAt = 0;
     const render = (timestamp) => {
       if (cancelled) return;
+      if (timestamp - lastPaintAt < 33) {
+        frameRef.current = window.requestAnimationFrame(render);
+        return;
+      }
+      lastPaintAt = timestamp;
       const rect = canvas.getBoundingClientRect();
       const width = rect.width || 1;
       const height = rect.height || 1;
@@ -319,7 +326,7 @@ export default function ParticleCommandStage({
       const projectedNodes = nodes
         .map((node) => {
           const projection = projectNode(node, width, height, timestamp);
-          const command = commands.find((item) => item.id === node.id);
+          const command = commandMap.get(node.id);
           const status = statuses[node.id]?.state || "stopped";
           const radius = 6 + projection.depth * 16 + (selectedId === node.id ? 5 : 0);
 
@@ -405,7 +412,7 @@ export default function ParticleCommandStage({
       observer.disconnect();
       window.cancelAnimationFrame(frameRef.current);
     };
-  }, [commands, nodes, onSelect, selectedId, statuses]);
+  }, [commandMap, nodes, onSelect, selectedId, statuses]);
 
   function updatePointerFromEvent(event) {
     const canvas = canvasRef.current;

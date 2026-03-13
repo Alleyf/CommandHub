@@ -4,3 +4,5 @@ __pycache__/
 node_modules/
 dist/
 release/
+release-verify/
+release-verify-2/

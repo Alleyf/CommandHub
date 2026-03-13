@@ -1,15 +1,16 @@
 ﻿const { app, BrowserWindow, dialog, ipcMain, Menu, Tray, nativeImage, nativeTheme, shell } = require("electron");
+const { Notification } = require("electron");
 const path = require("node:path");
 
 Menu.setApplicationMenu(null);
 const { autoUpdater } = require("electron-updater");
 const fs = require("node:fs");
-const { execFile, execFileSync, spawn } = require("node:child_process");
+const { execFile, execFileSync, spawn, fork } = require("node:child_process");
 const util = require("node:util");
 const execFileAsync = util.promisify(execFile);
 
 const { createStore } = require("./store");
-const { killSystemProcess, listMatchedSystemProcesses, getWindowsPowerShellPath } = require("./system-processes");
+const { killSystemProcess, getWindowsPowerShellPath } = require("./system-processes");
 
 const isDev = !app.isPackaged;
 const processes = new Map();
@@ -18,15 +19,30 @@ const DEFAULT_SETTINGS = {
   launchAtLogin: false,
   language: "zh-CN",
   logMode: "overwrite",
+  quietMode: false,
+  errorReminder: true,
   themeMode: "system",
   particleMode: false,
-  gestureMode: false
+  gestureMode: false,
+  onboardingCompleted: false
 };
 
 let mainWindow = null;
 let tray = null;
 let pollTimer = null;
 let forceQuit = false;
+let processScannerWorker = null;
+let processScannerRequestId = 0;
+const processScannerPending = new Map();
+let rendererUpdateTimer = null;
+const PROCESS_SCAN_CACHE_TTL_MS = 3500;
+const SPECIAL_STATUS_CACHE_TTL_MS = 8000;
+let matchedProcessCache = [];
+let matchedProcessCacheAt = 0;
+let matchedProcessRefreshPromise = null;
+let watchProcessesTicking = false;
+const specialCommandStatusCache = new Map();
+const specialCommandStatusPending = new Map();
 
 const store = createStore(() => app.getPath("userData"));
 const {
@@ -62,6 +78,8 @@ function sanitizeImportedCommands(value) {
       args: String(item.args || ""),
       cwd: String(item.cwd || ""),
       group: String(item.group || ""),
+      accentTone: String(item.accentTone || "teal"),
+      isFavorite: Boolean(item.isFavorite),
       env: typeof item.env === "object" && item.env ? item.env : {},
       autoRestart: Boolean(item.autoRestart),
       createdAt: item.createdAt || nowIso(),
@@ -69,7 +87,8 @@ function sanitizeImportedCommands(value) {
       lastStartedAt: item.lastStartedAt || null,
       lastExitCode: item.lastExitCode ?? null,
       lastStoppedAt: item.lastStoppedAt || null,
-      lastState: item.lastState || "stopped"
+      lastState: item.lastState || "stopped",
+      lastHint: String(item.lastHint || "")
     }));
 }
 
@@ -81,6 +100,220 @@ function getWindowIconPath() {
   return process.platform === "win32"
     ? getAssetPath("icon.ico")
     : getAssetPath("icon-256.png");
+}
+
+function ensureProcessScannerWorker() {
+  if (processScannerWorker && !processScannerWorker.killed) return processScannerWorker;
+
+  processScannerWorker = fork(path.join(__dirname, "process-scanner-worker.js"), [], {
+    stdio: ["ignore", "ignore", "ignore", "ipc"]
+  });
+
+  processScannerWorker.on("message", (message) => {
+    if (!message?.requestId) return;
+    const pending = processScannerPending.get(message.requestId);
+    if (!pending) return;
+    processScannerPending.delete(message.requestId);
+    if (message.type === "scan-error") {
+      pending.reject(new Error(message.error || "Process scan failed"));
+      return;
+    }
+    pending.resolve(message.items || []);
+  });
+
+  processScannerWorker.on("exit", () => {
+    processScannerWorker = null;
+    for (const pending of processScannerPending.values()) {
+      pending.reject(new Error("Process scanner worker exited"));
+    }
+    processScannerPending.clear();
+  });
+
+  return processScannerWorker;
+}
+
+function requestSystemProcessScan(commands, statuses) {
+  return new Promise((resolve, reject) => {
+    const worker = ensureProcessScannerWorker();
+    const requestId = `scan-${Date.now().toString(36)}-${++processScannerRequestId}`;
+    processScannerPending.set(requestId, { resolve, reject });
+    worker.send({
+      type: "scan",
+      requestId,
+      commands,
+      statuses
+    });
+  });
+}
+
+function commandExists(command) {
+  try {
+    if (process.platform === "win32") {
+      const output = execFileSync("where", [command], {
+        encoding: "utf8",
+        windowsHide: true
+      }).trim();
+      return output.split(/\r?\n/).find(Boolean) || "";
+    }
+    const output = execFileSync("which", [command], {
+      encoding: "utf8"
+    }).trim();
+    return output.split(/\r?\n/).find(Boolean) || "";
+  } catch {
+    return "";
+  }
+}
+
+function isMatchedProcessCacheFresh() {
+  return matchedProcessCacheAt > 0 && (Date.now() - matchedProcessCacheAt) < PROCESS_SCAN_CACHE_TTL_MS;
+}
+
+function normalizeCommandExecutable(commandValue) {
+  return path.basename(normalizeExecutable(commandValue || "")).toLowerCase();
+}
+
+function isOpenClawGatewayServiceCommand(command) {
+  const executable = normalizeCommandExecutable(command?.command);
+  const args = String(command?.args || "").trim().toLowerCase();
+  return executable === "openclaw" && /^gateway\s+(start|restart)\b/.test(args);
+}
+
+function parseOpenClawGatewayPort(text) {
+  const source = String(text || "");
+  const patterns = [
+    /OPENCLAW_GATEWAY_PORT=(\d+)/i,
+    /port=(\d+)/i,
+    /gateway --port (\d+)/i,
+    /Dashboard:\s+https?:\/\/[^:\s]+:(\d+)/i,
+    /Probe target:\s+\w+:\/\/[^:\s]+:(\d+)/i
+  ];
+  for (const pattern of patterns) {
+    const match = source.match(pattern);
+    if (match) return Number(match[1]);
+  }
+  return null;
+}
+
+async function getPidListeningOnPort(port) {
+  const numericPort = Number(port);
+  if (!numericPort) return null;
+  try {
+    const { stdout } = await execFileAsync("cmd.exe", ["/d", "/c", `netstat -ano | findstr LISTENING | findstr :${numericPort}`], {
+      encoding: "utf8",
+      windowsHide: true
+    });
+    const lines = String(stdout || "").split(/\r?\n/).map((line) => line.trim()).filter(Boolean);
+    for (const line of lines) {
+      const match = line.match(/LISTENING\s+(\d+)$/i);
+      if (match) return Number(match[1]);
+    }
+  } catch {}
+  return null;
+}
+
+async function resolveOpenClawGatewayRuntime(command) {
+  if (!isOpenClawGatewayServiceCommand(command)) return null;
+  try {
+    const commandPath = commandExists("openclaw") || "openclaw";
+    const { stdout, stderr } = await execFileAsync(commandPath, ["gateway", "status", "--no-color"], {
+      encoding: "utf8",
+      windowsHide: true,
+      timeout: 20000
+    });
+    const output = [stdout, stderr].filter(Boolean).join("\n");
+    const port = parseOpenClawGatewayPort(output);
+    const pid = await getPidListeningOnPort(port);
+    if (!pid || !pidExists(pid)) {
+      return {
+        state: "stopped",
+        pid: null,
+        port,
+        message: "Idle",
+        rawOutput: output
+      };
+    }
+    return {
+      state: "running",
+      pid,
+      port,
+      message: `Running (gateway:${port || "--"})`,
+      rawOutput: output
+    };
+  } catch (error) {
+    return {
+      state: "stopped",
+      pid: null,
+      port: null,
+      message: String(error.message || error),
+      rawOutput: ""
+    };
+  }
+}
+
+function getCachedSpecialCommandStatus(commandId) {
+  const entry = specialCommandStatusCache.get(commandId);
+  if (!entry) return null;
+  if ((Date.now() - entry.updatedAt) > SPECIAL_STATUS_CACHE_TTL_MS) return null;
+  return entry.status || null;
+}
+
+async function refreshSpecialCommandStatus(command, force = false) {
+  if (!command?.id || !isOpenClawGatewayServiceCommand(command)) return null;
+  if (!force) {
+    const cached = getCachedSpecialCommandStatus(command.id);
+    if (cached) return cached;
+  }
+  const pending = specialCommandStatusPending.get(command.id);
+  if (pending) return pending;
+
+  const task = resolveOpenClawGatewayRuntime(command)
+    .then((status) => {
+      specialCommandStatusCache.set(command.id, {
+        updatedAt: Date.now(),
+        status
+      });
+      return status;
+    })
+    .finally(() => {
+      specialCommandStatusPending.delete(command.id);
+    });
+
+  specialCommandStatusPending.set(command.id, task);
+  return task;
+}
+
+function getCachedMatchedProcess(commandId) {
+  return matchedProcessCache.find((item) => item.isManaged && item.matchedCommandId === commandId) || null;
+}
+
+function getCachedMatchedProcessMap() {
+  const map = new Map();
+  for (const item of matchedProcessCache) {
+    if (!item.isManaged || !item.matchedCommandId || map.has(item.matchedCommandId)) continue;
+    map.set(item.matchedCommandId, item);
+  }
+  return map;
+}
+
+async function refreshMatchedProcessCache(force = false) {
+  if (!force && isMatchedProcessCacheFresh()) return matchedProcessCache;
+  if (matchedProcessRefreshPromise) return matchedProcessRefreshPromise;
+
+  matchedProcessRefreshPromise = requestSystemProcessScan(loadCommands(), getStatusesBase())
+    .then((items) => {
+      matchedProcessCache = Array.isArray(items) ? items : [];
+      matchedProcessCacheAt = Date.now();
+      return matchedProcessCache;
+    })
+    .catch((error) => {
+      console.warn("Failed to refresh matched process cache:", error);
+      return matchedProcessCache;
+    })
+    .finally(() => {
+      matchedProcessRefreshPromise = null;
+    });
+
+  return matchedProcessRefreshPromise;
 }
 
 process.on("unhandledRejection", (error) => {
@@ -175,8 +408,35 @@ function getWindowsHiddenLaunchScript(command, logPath, logMode) {
 $ErrorActionPreference = 'Stop'
 [Console]::OutputEncoding = [System.Text.Encoding]::UTF8
 ${envScript}
+function Get-ChildProcessChain {
+  param([int]$RootPid)
+  $all = @(Get-CimInstance Win32_Process -ErrorAction SilentlyContinue)
+  $children = @()
+  $queue = New-Object System.Collections.Generic.Queue[object]
+  foreach ($item in $all | Where-Object { $_.ParentProcessId -eq $RootPid }) {
+    $queue.Enqueue($item)
+  }
+  while ($queue.Count -gt 0) {
+    $current = $queue.Dequeue()
+    $children += $current
+    foreach ($item in $all | Where-Object { $_.ParentProcessId -eq $current.ProcessId }) {
+      $queue.Enqueue($item)
+    }
+  }
+  return $children
+}
 $process = Start-Process -FilePath "cmd.exe" -ArgumentList @('/d', '/c', '${escapePowerShellString(innerCmd)}') -WorkingDirectory '${escapePowerShellString(command.cwd || ".")}' -WindowStyle Hidden -PassThru
-"PID:$($process.Id)"
+Start-Sleep -Milliseconds 900
+$descendants = @(Get-ChildProcessChain -RootPid $process.Id)
+$preferred = $descendants | Where-Object {
+  $_.ProcessId -ne $process.Id -and
+  $_.Name -notmatch '^(cmd|conhost|powershell|pwsh)(\\.exe)?$'
+} | Sort-Object CreationDate -Descending | Select-Object -First 1
+$selectedPid = if ($preferred) { $preferred.ProcessId } else { $process.Id }
+[PSCustomObject]@{
+  pid = $selectedPid
+  shellPid = $process.Id
+} | ConvertTo-Json -Compress
 `.trim();
 }
 
@@ -197,8 +457,64 @@ function createStatus(base = {}) {
     lastExitCode: null,
     message: "",
     logPath: "",
+    hint: "",
     ...base
   };
+}
+
+function normalizeExecutable(commandValue) {
+  const raw = String(commandValue || "").trim();
+  if (!raw) return "";
+  if ((raw.startsWith('"') && raw.endsWith('"')) || (raw.startsWith("'") && raw.endsWith("'"))) {
+    return raw.slice(1, -1);
+  }
+  return raw;
+}
+
+function inferCommandHint(command, error, logTail = "") {
+  const executable = normalizeExecutable(command?.command);
+  const cwd = String(command?.cwd || "").trim();
+  const sourceText = [String(error?.message || error || ""), String(logTail || "")].join("\n").toLowerCase();
+
+  if (cwd && !fs.existsSync(cwd)) {
+    return "工作目录不存在，请检查路径是否还有效。";
+  }
+  if (executable && path.isAbsolute(executable) && !fs.existsSync(executable)) {
+    return "可执行文件不存在，请确认文件路径没有变动。";
+  }
+  if (executable && !path.isAbsolute(executable) && !commandExists(executable)) {
+    return "命令不在 PATH 中，请改用绝对路径或先配置环境变量。";
+  }
+  if (sourceText.includes("eaddrinuse") || sourceText.includes("address already in use") || sourceText.includes("port is already allocated")) {
+    return "端口已被占用，换一个端口或先停止冲突进程。";
+  }
+  if (sourceText.includes("module not found") || sourceText.includes("cannot find module")) {
+    return "依赖缺失，先安装项目依赖再启动。";
+  }
+  if (sourceText.includes("enoent") || sourceText.includes("no such file or directory")) {
+    return "命令或工作目录不存在，请检查路径和文件名。";
+  }
+  if (sourceText.includes("eacces") || sourceText.includes("permission denied")) {
+    return "权限不足，请尝试提升权限或更换可执行文件位置。";
+  }
+  if (sourceText.includes("is not recognized as an internal or external command")) {
+    return "系统无法识别这条命令，请确认命令名是否正确。";
+  }
+  return "";
+}
+
+function showErrorReminder(command, summary) {
+  const settings = loadSettings();
+  if (!settings.errorReminder || !Notification.isSupported()) {
+    return;
+  }
+
+  const reminder = new Notification({
+    title: `Command Hub · ${command?.name || "Command"}`,
+    body: summary,
+    silent: true
+  });
+  reminder.show();
 }
 
 function createTrayIcon() {
@@ -212,7 +528,12 @@ function createTrayIcon() {
 
 function updateRenderer() {
   if (!mainWindow || mainWindow.isDestroyed()) return;
-  mainWindow.webContents.send("runtime-updated");
+  if (rendererUpdateTimer) return;
+  rendererUpdateTimer = setTimeout(() => {
+    rendererUpdateTimer = null;
+    if (!mainWindow || mainWindow.isDestroyed()) return;
+    mainWindow.webContents.send("runtime-updated");
+  }, 80);
 }
 
 function showWindow() {
@@ -295,76 +616,142 @@ function hydrateRuntime() {
 
 function watchProcesses() {
   if (pollTimer) clearInterval(pollTimer);
-  pollTimer = setInterval(() => {
+  pollTimer = setInterval(async () => {
+    if (watchProcessesTicking) return;
+    watchProcessesTicking = true;
     let changed = false;
-    const runtime = loadRuntime();
-    const commandsById = new Map(loadCommands().map((command) => [command.id, command]));
+    try {
+      const runtime = loadRuntime();
+      const commandsById = new Map(loadCommands().map((command) => [command.id, command]));
+      const exitedEntries = [];
 
-    for (const [id, info] of Object.entries(runtime)) {
-      const managed = processes.get(id);
-      const command = managed?.command || commandsById.get(id);
-      
-      const isAlive = info?.pid && pidExists(info.pid);
-      const isChildAlive = managed?.child ? managed.child.exitCode === null : true;
-      
-      if (isAlive && isChildAlive) continue;
+      for (const [id, info] of Object.entries(runtime)) {
+        const managed = processes.get(id);
+        const command = managed?.command || commandsById.get(id);
+        const isAlive = info?.pid && pidExists(info.pid);
+        const isChildAlive = managed?.child ? managed.child.exitCode === null : true;
 
-      const exitCode = managed?.child?.exitCode ?? null;
+        if (isAlive && isChildAlive) continue;
+        exitedEntries.push({ id, info, managed, command });
+      }
 
-      try {
-        managed?.stream?.end();
-      } catch {}
+      let matchedByCommandId = new Map();
+      if (exitedEntries.length > 0) {
+        const refreshed = await refreshMatchedProcessCache(true);
+        matchedByCommandId = new Map();
+        for (const item of refreshed) {
+          if (!item.isManaged || !item.matchedCommandId || matchedByCommandId.has(item.matchedCommandId)) continue;
+          matchedByCommandId.set(item.matchedCommandId, item);
+        }
+      }
 
-      delete runtime[id];
-      processes.delete(id);
-      saveRuntime(runtime);
+      for (const { id, info, managed, command } of exitedEntries) {
+        if (isOpenClawGatewayServiceCommand(command)) {
+          const specialStatus = await refreshSpecialCommandStatus(command, true);
+          if (specialStatus?.state === "running" && specialStatus.pid && pidExists(specialStatus.pid)) {
+            runtime[id] = {
+              pid: specialStatus.pid,
+              shellPid: info?.shellPid || null,
+              startedAt: info?.startedAt || command?.lastStartedAt || nowIso(),
+              logPath: info?.logPath || getLogPath(id)
+            };
+            saveRuntime(runtime);
+            changed = true;
+            continue;
+          }
+        }
+
+        const matchedProcess = matchedByCommandId.get(id);
+        if (matchedProcess?.pid && pidExists(matchedProcess.pid)) {
+          runtime[id] = {
+            pid: matchedProcess.pid,
+            startedAt: info?.startedAt || command?.lastStartedAt || nowIso(),
+            logPath: info?.logPath || getLogPath(id)
+          };
+          saveRuntime(runtime);
+          changed = true;
+          continue;
+        }
+
+        const exitCode = managed?.child?.exitCode ?? null;
+
+        try {
+          managed?.stream?.end();
+        } catch {}
+
+        delete runtime[id];
+        processes.delete(id);
+        saveRuntime(runtime);
       updateCommand(id, (command) => ({
         lastExitCode: exitCode,
         lastStoppedAt: nowIso(),
         updatedAt: nowIso(),
-        lastState: (exitCode === 0 || exitCode === null || exitCode === undefined) ? "stopped" : "error"
+        lastState: (exitCode === 0 || exitCode === null || exitCode === undefined) ? "stopped" : "error",
+        lastHint: exitCode && command ? inferCommandHint(command, null, readLogTail(info?.logPath || getLogPath(id), 4000)) : ""
       }));
       logEvent({
         category: "command",
         level: exitCode === 0 || exitCode === null || exitCode === undefined ? "info" : "error",
         title: exitCode === 0 || exitCode === null || exitCode === undefined ? "Command exited" : "Command exited with error",
         summary: `${command?.name || id} exited${exitCode === null || exitCode === undefined ? "" : ` with code ${exitCode}`}.`,
-        commandId: id,
-        commandName: command?.name || "",
+          commandId: id,
+          commandName: command?.name || "",
         details: { exitCode, logPath: info?.logPath || getLogPath(id) }
       });
-      changed = true;
-      refreshTrayMenu();
-      updateRenderer();
-
-      if (command?.autoRestart) {
-        setTimeout(async () => {
-          await startCommand(command);
-          updateRenderer();
-        }, 1200);
+      if (exitCode !== 0 && exitCode !== null && exitCode !== undefined) {
+        showErrorReminder(command, `${command?.name || id} 已退出，退出码 ${exitCode}。`);
       }
-    }
+        changed = true;
+        refreshTrayMenu();
+        updateRenderer();
 
-    if (changed) {
-      refreshTrayMenu();
-      updateRenderer();
+        if (command?.autoRestart) {
+          setTimeout(async () => {
+            await startCommand(command);
+            updateRenderer();
+          }, 1200);
+        }
+      }
+
+      if (changed) {
+        refreshTrayMenu();
+        updateRenderer();
+      }
+    } finally {
+      watchProcessesTicking = false;
     }
   }, 1000);
 }
 
-function extractPid(text) {
-  const match = String(text || "").match(/PID:(\d+)/);
-  if (match) {
-    return Number(match[1]);
+function extractLaunchResult(text) {
+  const raw = String(text || "").trim();
+  if (!raw) {
+    return { pid: NaN, shellPid: NaN };
   }
-  const lines = String(text || "").split(/\r?\n/).map((line) => line.trim()).filter(Boolean);
+
+  try {
+    const parsed = JSON.parse(raw);
+    return {
+      pid: Number(parsed?.pid),
+      shellPid: Number(parsed?.shellPid)
+    };
+  } catch {}
+
+  const match = raw.match(/PID:(\d+)/);
+  if (match) {
+    return { pid: Number(match[1]), shellPid: Number(match[1]) };
+  }
+
+  const lines = raw.split(/\r?\n/).map((line) => line.trim()).filter(Boolean);
   for (let index = lines.length - 1; index >= 0; index -= 1) {
     const line = lines[index];
     if (/^\d+$/.test(line)) {
-      return Number(line);
+      const pid = Number(line);
+      return { pid, shellPid: pid };
     }
   }
-  return NaN;
+
+  return { pid: NaN, shellPid: NaN };
 }
 
 async function startCommand(command) {
@@ -401,7 +788,15 @@ async function startCommand(command) {
       await sleepMs(300);
     }
     if (!cleared) {
+      const hint = "日志文件正被占用，请稍等几秒后重试。";
       console.warn(`Giving up on clearing log file for ${command.id} after 5 attempts.`);
+      updateCommand(command.id, () => ({
+        lastExitCode: null,
+        lastStoppedAt: nowIso(),
+        updatedAt: nowIso(),
+        lastState: "error",
+        lastHint: hint
+      }));
       logEvent({
         category: "command",
         level: "error",
@@ -414,13 +809,15 @@ async function startCommand(command) {
       return createStatus({
         state: "error",
         message: "Log file is busy and could not be cleared. Please try again in a few seconds.",
-        logPath
+        logPath,
+        hint
       });
     }
   }
   let child = null;
   let stream = null;
   let runtimePid = null;
+  let shellPid = null;
 
   if (process.platform === "win32") {
     try {
@@ -429,12 +826,22 @@ async function startCommand(command) {
         encoding: "utf8",
         windowsHide: true
       });
-      runtimePid = extractPid(stdout);
+      const launchResult = extractLaunchResult(stdout);
+      runtimePid = launchResult.pid;
+      shellPid = launchResult.shellPid;
       if (Number.isNaN(runtimePid)) {
         throw new Error(`Could not determine process PID from PowerShell output: ${stdout}`);
       }
     } catch (error) {
+      const hint = inferCommandHint(command, error);
       console.error(`Failed to start command ${command.id}:`, error);
+      updateCommand(command.id, () => ({
+        lastExitCode: null,
+        lastStoppedAt: nowIso(),
+        updatedAt: nowIso(),
+        lastState: "error",
+        lastHint: hint
+      }));
       logEvent({
         category: "command",
         level: "error",
@@ -444,10 +851,12 @@ async function startCommand(command) {
         commandName: command.name,
         details: { logPath }
       });
+      showErrorReminder(command, hint || String(error.message || error));
       return createStatus({
         state: "error",
         message: String(error.message || error),
-        logPath
+        logPath,
+        hint
       });
     }
   } else {
@@ -472,7 +881,8 @@ async function startCommand(command) {
     pid: runtimePid,
     startedAt: nowIso(),
     message: "Running",
-    logPath
+    logPath,
+    hint: ""
   });
 
   if (child) {
@@ -480,6 +890,7 @@ async function startCommand(command) {
   }
   currentRuntime[command.id] = {
     pid: runtimePid,
+    shellPid,
     startedAt: status.startedAt,
     logPath
   };
@@ -488,7 +899,8 @@ async function startCommand(command) {
     lastStartedAt: status.startedAt,
     lastExitCode: null,
     updatedAt: nowIso(),
-    lastState: "running"
+    lastState: "running",
+    lastHint: ""
   }));
   recordUsage(command.id);
   logEvent({
@@ -501,14 +913,78 @@ async function startCommand(command) {
     details: { pid: runtimePid, logPath }
   });
   refreshTrayMenu();
+  if (isOpenClawGatewayServiceCommand(command)) {
+    const specialStatus = await refreshSpecialCommandStatus(command, true);
+    if (specialStatus?.state === "running" && specialStatus.pid) {
+      currentRuntime[command.id] = {
+        pid: specialStatus.pid,
+        shellPid,
+        startedAt: status.startedAt,
+        logPath
+      };
+      saveRuntime(currentRuntime);
+      refreshMatchedProcessCache(true).then(() => updateRenderer()).catch(() => {});
+      return createStatus({
+        ...status,
+        pid: specialStatus.pid,
+        message: specialStatus.message || "Running"
+      });
+    }
+  }
+  refreshMatchedProcessCache(true).then(() => updateRenderer()).catch(() => {});
   return status;
 }
 
 async function stopCommand(id) {
   const runtime = loadRuntime();
-  const data = runtime[id];
   const command = loadCommands().find((item) => item.id === id);
+  let data = runtime[id];
+  if (command && isOpenClawGatewayServiceCommand(command)) {
+    try {
+      const commandPath = commandExists("openclaw") || "openclaw";
+      await execFileAsync(commandPath, ["gateway", "stop"], {
+        encoding: "utf8",
+        windowsHide: true,
+        timeout: 20000
+      });
+      await sleepMs(600);
+    } catch {}
+    const specialStatus = await refreshSpecialCommandStatus(command, true);
+    if (specialStatus?.state === "running" && specialStatus.pid) {
+      data = {
+        ...(data || {}),
+        pid: specialStatus.pid,
+        logPath: data?.logPath || getLogPath(id)
+      };
+    }
+  }
   if (!data?.pid) {
+    if (command && isOpenClawGatewayServiceCommand(command)) {
+      delete runtime[id];
+      saveRuntime(runtime);
+      updateCommand(id, () => ({
+        lastStoppedAt: nowIso(),
+        updatedAt: nowIso(),
+        lastState: "stopped",
+        lastHint: ""
+      }));
+      logEvent({
+        category: "command",
+        level: "info",
+        title: "Command stopped",
+        summary: `${command?.name || id} stopped.`,
+        commandId: id,
+        commandName: command?.name || "",
+        details: { pid: null, logPath: getLogPath(id) }
+      });
+      refreshTrayMenu();
+      return createStatus({
+        state: "stopped",
+        stoppedAt: nowIso(),
+        message: "Stopped",
+        logPath: getLogPath(id)
+      });
+    }
     logEvent({
       category: "operation",
       level: "info",
@@ -541,7 +1017,8 @@ async function stopCommand(id) {
   updateCommand(id, () => ({
     lastStoppedAt: nowIso(),
     updatedAt: nowIso(),
-    lastState: "stopped"
+    lastState: "stopped",
+    lastHint: ""
   }));
   logEvent({
     category: "command",
@@ -554,6 +1031,7 @@ async function stopCommand(id) {
   });
 
   refreshTrayMenu();
+  refreshMatchedProcessCache(true).then(() => updateRenderer()).catch(() => {});
   return createStatus({
     state: "stopped",
     stoppedAt: nowIso(),
@@ -562,7 +1040,7 @@ async function stopCommand(id) {
   });
 }
 
-function getStatuses() {
+function getStatusesBase() {
   const runtime = loadRuntime();
   const statuses = {};
   const commands = loadCommands();
@@ -574,7 +1052,8 @@ function getStatuses() {
         pid: info.pid,
         startedAt: info.startedAt,
         message: "Running",
-        logPath: info.logPath
+        logPath: info.logPath,
+        hint: command.lastHint || ""
       });
     } else {
       const state = command.lastState === "running" ? "stopped" : (command.lastState || "stopped");
@@ -583,10 +1062,54 @@ function getStatuses() {
         message: "Idle",
         stoppedAt: command.lastStoppedAt || null,
         lastExitCode: command.lastExitCode ?? null,
-        logPath: info?.logPath || getLogPath(command.id)
+        logPath: info?.logPath || getLogPath(command.id),
+        hint: command.lastHint || ""
       });
     }
   }
+  return statuses;
+}
+
+function getStatuses() {
+  const commands = loadCommands();
+  const statuses = getStatusesBase();
+  const canUseCache = isMatchedProcessCacheFresh();
+  const matchedByCommandId = canUseCache ? getCachedMatchedProcessMap() : new Map();
+
+  for (const command of commands) {
+    const currentStatus = statuses[command.id];
+    if (currentStatus?.state === "running") continue;
+    if (command.lastState !== "running") continue;
+
+    const matchedProcess = matchedByCommandId.get(command.id);
+    if (!matchedProcess?.pid || !pidExists(matchedProcess.pid)) continue;
+
+    statuses[command.id] = createStatus({
+      state: "running",
+      pid: matchedProcess.pid,
+      startedAt: command.lastStartedAt || null,
+      message: matchedProcess.matchType === "pid" ? "Running" : "Running (detected)",
+      logPath: currentStatus?.logPath || getLogPath(command.id),
+      hint: command.lastHint || ""
+    });
+  }
+
+  for (const command of commands) {
+    const currentStatus = statuses[command.id];
+    if (currentStatus?.state === "running") continue;
+    const specialStatus = getCachedSpecialCommandStatus(command.id);
+    if (!specialStatus || specialStatus.state !== "running" || !specialStatus.pid || !pidExists(specialStatus.pid)) continue;
+
+    statuses[command.id] = createStatus({
+      state: "running",
+      pid: specialStatus.pid,
+      startedAt: command.lastStartedAt || null,
+      message: specialStatus.message || "Running",
+      logPath: currentStatus?.logPath || getLogPath(command.id),
+      hint: command.lastHint || ""
+    });
+  }
+
   return statuses;
 }
 
@@ -663,7 +1186,8 @@ safeHandle("app:get-state", async () => {
   const commands = loadCommands();
   const statuses = getStatuses();
   const settings = loadSettings();
-  return { commands, statuses, settings };
+  const usageStats = loadUsageStats();
+  return { commands, statuses, settings, usageStats };
 });
 safeHandle("app:save-command", async (_event, payload) => {
   const commands = loadCommands();
@@ -814,7 +1338,21 @@ safeHandle("app:import-commands", async () => {
   updateRenderer();
   return { ok: true, filePath: result.filePaths[0], count: imported.length, total: merged.size };
 });
-safeHandle("app:list-system-processes", async () => listMatchedSystemProcesses(loadCommands(), getStatuses()));
+safeHandle("app:scan-template-libraries", async (_event, templates) => {
+  const matches = (Array.isArray(templates) ? templates : [])
+    .map((template) => {
+      const detectors = Array.isArray(template.detect) && template.detect.length > 0 ? template.detect : [template.command];
+      const found = detectors
+        .map((command) => ({ command, path: commandExists(command) }))
+        .find((item) => item.path);
+      return found ? { ...template, detectedCommand: found.command, detectedPath: found.path } : null;
+    })
+    .filter(Boolean);
+  return { ok: true, matches };
+});
+safeHandle("app:list-system-processes", async () => {
+  return await refreshMatchedProcessCache(true);
+});
 safeHandle("app:kill-system-process", async (_event, pid) => await killSystemProcess(pid, terminateProcess));
 safeHandle("app:get-global-logs", async (_event, options) => {
   return buildGlobalLogEntries(loadCommands(), loadRuntime(), options || {});
@@ -910,6 +1448,7 @@ app.whenReady().then(async () => {
   saveSettings(loadSettings());
   ensureTray();
   watchProcesses();
+  refreshMatchedProcessCache(true).catch(() => {});
   await createWindow();
   nativeTheme.on("updated", () => updateRenderer());
 
@@ -924,6 +1463,9 @@ app.whenReady().then(async () => {
 
 app.on("before-quit", () => {
   forceQuit = true;
+  if (processScannerWorker && !processScannerWorker.killed) {
+    processScannerWorker.kill();
+  }
 });
 
 app.on("window-all-closed", () => {
