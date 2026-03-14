@@ -4,7 +4,7 @@ export const APP_MESSAGES = {
     appTitle: "Command Hub",
     lede: "把常驻 CLI、网关、开发服务和本地守护进程收进一个更清爽的控制台。",
     navCommands: "命令",
-    navLibrary: "环境与模板",
+    navLibrary: "环境模板",
     navSettings: "设置",
     navLogs: "日志",
     navProductivity: "效率工具",
