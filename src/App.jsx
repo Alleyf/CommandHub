@@ -22,6 +22,7 @@ import {
 } from "./process-utils";
 import { COMMAND_TEMPLATES } from "./command-templates";
 import ParticleCommandStage from "./ParticleCommandStage";
+import ProductivityHub from "./ProductivityHub";
 import {
   AlertTriangle,
   Bot,
@@ -140,6 +141,7 @@ function NavIcon({ view }) {
   if (view === "commands") return <Bot size={16} strokeWidth={2.1} />;
   if (view === "library") return <Boxes size={16} strokeWidth={2.1} />;
   if (view === "logs") return <Logs size={16} strokeWidth={2.1} />;
+  if (view === "productivity") return <Layers3 size={16} strokeWidth={2.1} />;
   return <Settings2 size={16} strokeWidth={2.1} />;
 }
 
@@ -209,6 +211,7 @@ function App() {
   const [templateScanBusy, setTemplateScanBusy] = useState(false);
   const [onboardingOpen, setOnboardingOpen] = useState(false);
   const [onboardingStep, setOnboardingStep] = useState(0);
+  const [onboardingTargetRect, setOnboardingTargetRect] = useState(null);
   const [columnWidths, setColumnWidths] = useState({
     name: 2.2,
     status: 1,
@@ -488,6 +491,7 @@ function App() {
       .sort((left, right) => new Date(lastUsed[right.id]).getTime() - new Date(lastUsed[left.id]).getTime())
       .slice(0, 5);
   }, [commands, usageStats]);
+  const hasNoCommands = commands.length === 0;
 
   async function runCommandAction(task, successMessage) {
     try {
@@ -899,7 +903,7 @@ function App() {
       ]
     : [];
 
-  const navItems = [["commands", t("navCommands")], ["library", t("navLibrary")], ["logs", t("navLogs")], ["settings", t("navSettings")]];
+  const navItems = [["commands", t("navCommands")], ["library", t("navLibrary")], ["productivity", t("navProductivity")], ["logs", t("navLogs")], ["settings", t("navSettings")]];
   const stateOptions = [["", t("allStates")], ["running", t("stateRunning")], ["stopped", t("stateStopped")], ["error", t("stateError")]];
   const stateSelectOptions = stateOptions.map(([value, label]) => ({ value, label }));
   const groupFilterOptions = [{ value: "", label: t("allGroups") }, ...groups.map((group) => ({ value: group, label: group || t("noGroup") }))];
@@ -915,25 +919,98 @@ function App() {
   ];
   const onboardingSteps = [
     {
-      title: t("onboardingStepCommandsTitle"),
-      body: t("onboardingStepCommandsBody"),
-      actionLabel: t("onboardingOpenCommands"),
-      action: () => setActiveView("commands")
+      title: hasNoCommands ? t("onboardingStepCreateTitle") : t("onboardingStepCommandsTitle"),
+      body: hasNoCommands ? t("onboardingStepCreateBody") : t("onboardingStepCommandsBody"),
+      actionLabel: hasNoCommands ? t("emptyEntryCreate") : t("onboardingOpenCommands"),
+      action: () => {
+        setActiveView("commands");
+        setCommandsTab("commands");
+        if (hasNoCommands) {
+          openCreate();
+        }
+      },
+      view: "commands",
+      target: hasNoCommands ? "empty-entry" : "command-surface"
     },
     {
       title: t("onboardingStepLibraryTitle"),
       body: t("onboardingStepLibraryBody"),
       actionLabel: t("onboardingOpenLibrary"),
-      action: () => setActiveView("library")
+      action: () => setActiveView("library"),
+      view: "library",
+      target: "library-surface"
     },
     {
       title: t("onboardingStepModesTitle"),
       body: t("onboardingStepModesBody"),
-      actionLabel: t("onboardingOpenSettings"),
-      action: () => setActiveView("settings")
+      actionLabel: t("onboardingOpenCommands"),
+      action: () => {
+        setActiveView("commands");
+        setCommandsTab("commands");
+      },
+      view: "commands",
+      target: hasNoCommands ? "empty-entry" : "detail-surface"
     }
   ];
   const currentOnboardingStep = onboardingSteps[onboardingStep] || onboardingSteps[0];
+
+  function onboardingFocusClass(target) {
+    if (!onboardingOpen) return "";
+    return currentOnboardingStep?.target === target ? "onboarding-focus-target" : "";
+  }
+
+  useEffect(() => {
+    if (!onboardingOpen) return;
+    const step = currentOnboardingStep;
+    if (!step?.view || activeView === step.view) return;
+    setActiveView(step.view);
+    if (step.view === "commands") setCommandsTab("commands");
+  }, [activeView, currentOnboardingStep, onboardingOpen]);
+
+  useEffect(() => {
+    if (!onboardingOpen) {
+      setOnboardingTargetRect(null);
+      return;
+    }
+    const target = currentOnboardingStep?.target;
+    if (!target) {
+      setOnboardingTargetRect(null);
+      return;
+    }
+
+    let rafId = 0;
+    const measure = () => {
+      const element = document.querySelector(`[data-onboarding-target="${target}"]`);
+      if (!element) {
+        setOnboardingTargetRect(null);
+        return;
+      }
+      const rect = element.getBoundingClientRect();
+      const paddedTop = Math.max(12, rect.top - 8);
+      const paddedLeft = Math.max(12, rect.left - 8);
+      setOnboardingTargetRect({
+        top: paddedTop,
+        left: paddedLeft,
+        width: Math.min(rect.width + 16, window.innerWidth - paddedLeft - 12),
+        height: Math.min(rect.height + 16, window.innerHeight - paddedTop - 12)
+      });
+    };
+
+    const scheduleMeasure = () => {
+      cancelAnimationFrame(rafId);
+      rafId = requestAnimationFrame(measure);
+    };
+
+    scheduleMeasure();
+    window.addEventListener("resize", scheduleMeasure);
+    window.addEventListener("scroll", scheduleMeasure, true);
+    return () => {
+      cancelAnimationFrame(rafId);
+      window.removeEventListener("resize", scheduleMeasure);
+      window.removeEventListener("scroll", scheduleMeasure, true);
+    };
+  }, [activeView, commandsTab, currentOnboardingStep?.target, onboardingOpen]);
+
   const logModeOptions = [
     { value: "overwrite", label: t("logModeOverwrite") },
     { value: "append", label: t("logModeAppend") }
@@ -1037,7 +1114,7 @@ function App() {
         {activeView === "commands" && (
           <>
             {commandsTab === "commands" ? (
-              <section className="hero">
+              <section data-onboarding-target="command-surface" className={`hero ${onboardingFocusClass("command-surface")}`.trim()}>
                 <div className="hero-copy">
                   <div className="eyebrow">{t("operationsDeck")}</div>
                   <h2>{t("heroTitle")}</h2>
@@ -1157,7 +1234,22 @@ function App() {
               </section>
             )}
 
-            <div className="subtabs">
+            {commandsTab === "commands" && hasNoCommands && (
+              <section data-onboarding-target="empty-entry" className={`command-empty-entry ${onboardingFocusClass("empty-entry")}`.trim()}>
+                <div className="command-empty-entry-main">
+                  <div className="eyebrow">{t("commandStudio")}</div>
+                  <h3>{t("emptyEntryTitle")}</h3>
+                  <p className="section-copy">{t("emptyEntryDesc")}</p>
+                </div>
+                <div className="command-empty-entry-actions">
+                  <button className="btn btn-md teal" onClick={openCreate}><Plus size={15} />{t("emptyEntryCreate")}</button>
+                  <button className="btn btn-md ghost" onClick={importCommands}><Upload size={15} />{t("emptyEntryImport")}</button>
+                  <button className="btn btn-md secondary" onClick={() => setActiveView("library")}><FolderSearch size={15} />{t("emptyEntryTemplates")}</button>
+                </div>
+              </section>
+            )}
+
+            <div className={`subtabs ${commandsTab === "commands" && hasNoCommands ? "subtabs-compact" : ""}`.trim()}>
               <button className={`btn btn-sm subtab ${commandsTab === "commands" ? "active" : ""}`} onClick={() => setCommandsTab("commands")}>
                 {t("commandTab")}
               </button>
@@ -1166,7 +1258,7 @@ function App() {
               </button>
             </div>
 
-            <section className={commandsTab === "processes" ? "content-grid process-layout" : "content-grid"}>
+            <section className={commandsTab === "processes" ? "content-grid process-layout" : hasNoCommands ? "content-grid content-grid-empty" : "content-grid"}>
               {commandsTab === "commands" && (
               <div className="inventory card">
                 <div className="section-head split-head">
@@ -1410,7 +1502,7 @@ function App() {
               <div className="detail-rail">
                 {commandsTab === "commands" && (
                   <>
-                    <div className="card detail-card">
+                    <div data-onboarding-target="detail-surface" className={`card detail-card ${onboardingFocusClass("detail-surface")}`.trim()}>
                       <div className="detail-header">
                         <div className="section-title">{t("commandDetail")}</div>
                         <div className="detail-header-actions">
@@ -1566,7 +1658,7 @@ function App() {
         {activeView === "library" && (
           <section className="single-panel">
             <div className="content-grid library-layout">
-              <div className="card panel-card logs-panel">
+              <div data-onboarding-target="library-surface" className={`card panel-card logs-panel ${onboardingFocusClass("library-surface")}`.trim()}>
                 <div className="split-head">
                   <div>
                     <div className="section-title section-title-with-icon"><FolderSearch size={14} />{t("libraryTitle")}</div>
@@ -1640,6 +1732,10 @@ function App() {
               </div>
             </div>
           </section>
+        )}
+
+        {activeView === "productivity" && (
+          <ProductivityHub active={activeView === "productivity"} t={t} onToast={showActionStatus} />
         )}
 
         {activeView === "settings" && (
@@ -1777,14 +1873,28 @@ function App() {
 
       {onboardingOpen && (
         <div className="onboarding-backdrop">
-          <section className="onboarding-modal card" role="dialog" aria-modal="true" aria-label={t("onboardingTitle")}>
+          {onboardingTargetRect && (
+            <div
+              className="onboarding-target-frame"
+              aria-hidden="true"
+              style={{
+                top: `${onboardingTargetRect.top}px`,
+                left: `${onboardingTargetRect.left}px`,
+                width: `${onboardingTargetRect.width}px`,
+                height: `${onboardingTargetRect.height}px`
+              }}
+            />
+          )}
+          <section className="onboarding-dock card" role="dialog" aria-modal="true" aria-label={t("onboardingTitle")}>
             <div className="onboarding-head">
-              <div className="eyebrow">{t("onboardingTitle")}</div>
+              <div>
+                <div className="eyebrow">{t("onboardingTitle")}</div>
+                <div className="onboarding-target-chip">{t("onboardingTargetLabel")}: {currentOnboardingStep.title}</div>
+              </div>
               <button className="btn btn-sm ghost" onClick={completeOnboarding}>{t("onboardingSkip")}</button>
             </div>
-            <div className="onboarding-copy">
+            <div className="onboarding-copy compact-copy">
               <h3>{currentOnboardingStep.title}</h3>
-              <p className="section-copy">{t("onboardingSubtitle")}</p>
               <p className="onboarding-body">{currentOnboardingStep.body}</p>
             </div>
             <div className="onboarding-progress">
@@ -1797,7 +1907,7 @@ function App() {
                 />
               ))}
             </div>
-            <div className="onboarding-actions">
+            <div className="onboarding-actions compact-actions">
               <button className="btn btn-sm ghost" onClick={currentOnboardingStep.action}>
                 {currentOnboardingStep.actionLabel}
               </button>
@@ -1822,7 +1932,6 @@ function App() {
           </section>
         </div>
       )}
-
       <div className={`modal-backdrop ${drawerOpen ? "open" : ""}`} onClick={() => setDrawerOpen(false)}>
       <aside className={`drawer ${drawerOpen ? "open" : ""}`} onClick={(event) => event.stopPropagation()}>
         <div className="drawer-head">
@@ -1941,3 +2050,6 @@ function App() {
 }
 
 export default App;
+
+
+

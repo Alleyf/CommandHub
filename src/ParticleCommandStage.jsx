@@ -126,6 +126,7 @@ export default function ParticleCommandStage({
   format
 }) {
   const canvasRef = useRef(null);
+  const previewVideoRef = useRef(null);
   const pointerRef = useRef({ x: 0.5, y: 0.5, active: false, source: "pointer" });
   const dwellRef = useRef({ id: "", at: 0 });
   const frameRef = useRef(0);
@@ -276,6 +277,24 @@ export default function ParticleCommandStage({
       trackerRef.current = { stream: null, detector: null, video: null, timer: 0 };
     };
   }, [commands, gestureEnabled, onStart, onStop, selectedId, copy, format]);
+
+  useEffect(() => {
+    const preview = previewVideoRef.current;
+    if (!preview) return;
+
+    const stream = trackerRef.current.stream;
+    if (gestureEnabled && trackerMode === "camera" && stream) {
+      if (preview.srcObject !== stream) {
+        preview.srcObject = stream;
+      }
+      preview.play().catch(() => {});
+      return;
+    }
+
+    if (preview.srcObject) {
+      preview.srcObject = null;
+    }
+  }, [gestureEnabled, trackerMode]);
 
   useEffect(() => {
     const canvas = canvasRef.current;
@@ -457,6 +476,23 @@ export default function ParticleCommandStage({
             if (nearestRef.current) onSelect(nearestRef.current);
           }}
         />
+        {gestureEnabled && (
+          <div className={`particle-camera-preview ${trackerMode === "camera" ? "live" : "idle"}`}>
+            <div className="particle-camera-head">
+              <span>{tx("particleCameraPreviewTitle")}</span>
+              <span className={`particle-camera-badge ${trackerMode === "camera" ? "live" : "idle"}`}>
+                {trackerMode === "camera" ? tx("particleCameraLive") : tx("particleCameraFallback")}
+              </span>
+            </div>
+            <div className="particle-camera-viewport">
+              {trackerMode === "camera" ? (
+                <video ref={previewVideoRef} className="particle-camera-video" autoPlay muted playsInline />
+              ) : (
+                <div className="particle-camera-placeholder">{tx("particleCameraUnavailable")}</div>
+              )}
+            </div>
+          </div>
+        )}
       </div>
     </div>
   );

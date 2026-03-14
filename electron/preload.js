@@ -25,6 +25,12 @@ contextBridge.exposeInMainWorld("commandHub", {
   listSystemProcesses: () => ipcRenderer.invoke("app:list-system-processes"),
   killSystemProcess: (pid) => ipcRenderer.invoke("app:kill-system-process", pid),
   checkForUpdates: () => ipcRenderer.invoke("app:check-for-updates"),
+  getProductivityOverview: () => ipcRenderer.invoke("app:get-productivity-overview"),
+  saveProductivitySettings: (payload) => ipcRenderer.invoke("app:save-productivity-settings", payload),
+  scanDuplicateFiles: (payload) => ipcRenderer.invoke("app:scan-duplicate-files", payload),
+  scanStaleFiles: (payload) => ipcRenderer.invoke("app:scan-stale-files", payload),
+  deleteFiles: (payload) => ipcRenderer.invoke("app:delete-files", payload),
+  archiveFiles: (payload) => ipcRenderer.invoke("app:archive-files", payload),
   getPathForFile: (file) => {
     try {
       return webUtils.getPathForFile(file);

@@ -1,8 +1,9 @@
 .commandhub/
+..codebuddy/
+.codex/
 __pycache__/
 *.pyc
 node_modules/
 dist/
 release/
-release-verify/
-release-verify-2/
+electron-cache/

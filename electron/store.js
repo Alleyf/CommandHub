@@ -48,6 +48,10 @@ function createStore(getUserDataPath) {
     return path.join(getStoreDir(), "operation-log.json");
   }
 
+  function getProductivityFile() {
+    return path.join(getStoreDir(), "productivity.json");
+  }
+
   function getLogsDir() {
     return path.join(getStoreDir(), "logs");
   }
@@ -147,6 +151,14 @@ function createStore(getUserDataPath) {
     saveOperationLog([]);
   }
 
+  function loadProductivityState() {
+    return readJson(getProductivityFile(), {});
+  }
+
+  function saveProductivityState(value) {
+    writeJson(getProductivityFile(), value || {});
+  }
+
   function buildGlobalLogEntries(commands, runtime, options = {}) {
     const { category = "", commandId = "", query = "", limit = 200 } = options;
     const normalizedQuery = String(query || "").trim().toLowerCase();
@@ -204,6 +216,7 @@ function createStore(getUserDataPath) {
     getSettingsFile,
     getLogsDir,
     getOperationLogFile,
+    getProductivityFile,
     readJson,
     writeJson,
     loadCommands,
@@ -222,6 +235,8 @@ function createStore(getUserDataPath) {
     saveOperationLog,
     appendOperationLog,
     clearOperationLog,
+    loadProductivityState,
+    saveProductivityState,
     buildGlobalLogEntries
   };
 }

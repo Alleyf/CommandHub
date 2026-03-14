@@ -11,6 +11,7 @@ const execFileAsync = util.promisify(execFile);
 
 const { createStore } = require("./store");
 const { killSystemProcess, getWindowsPowerShellPath } = require("./system-processes");
+const { createProductivityTools } = require("./productivity-tools");
 
 const isDev = !app.isPackaged;
 const processes = new Map();
@@ -503,6 +504,13 @@ function inferCommandHint(command, error, logTail = "") {
   return "";
 }
 
+const productivityTools = createProductivityTools({
+  app,
+  store,
+  Notification,
+  logEvent: (entry) => logEvent(entry)
+});
+
 function showErrorReminder(command, summary) {
   const settings = loadSettings();
   if (!settings.errorReminder || !Notification.isSupported()) {
@@ -674,6 +682,11 @@ function watchProcesses() {
         }
 
         const exitCode = managed?.child?.exitCode ?? null;
+        const logPath = info?.logPath || getLogPath(id);
+        const logTail = readLogTail(logPath, 4000);
+        const inferredHint = command ? inferCommandHint(command, null, logTail) : "";
+        const inferredExitCode = exitCode ?? (inferredHint ? 1 : null);
+        const isErrorExit = inferredExitCode !== null && inferredExitCode !== undefined && inferredExitCode !== 0;
 
         try {
           managed?.stream?.end();
@@ -682,24 +695,24 @@ function watchProcesses() {
         delete runtime[id];
         processes.delete(id);
         saveRuntime(runtime);
-      updateCommand(id, (command) => ({
-        lastExitCode: exitCode,
+      updateCommand(id, () => ({
+        lastExitCode: inferredExitCode,
         lastStoppedAt: nowIso(),
         updatedAt: nowIso(),
-        lastState: (exitCode === 0 || exitCode === null || exitCode === undefined) ? "stopped" : "error",
-        lastHint: exitCode && command ? inferCommandHint(command, null, readLogTail(info?.logPath || getLogPath(id), 4000)) : ""
+        lastState: isErrorExit ? "error" : "stopped",
+        lastHint: isErrorExit ? inferredHint : ""
       }));
       logEvent({
         category: "command",
-        level: exitCode === 0 || exitCode === null || exitCode === undefined ? "info" : "error",
-        title: exitCode === 0 || exitCode === null || exitCode === undefined ? "Command exited" : "Command exited with error",
-        summary: `${command?.name || id} exited${exitCode === null || exitCode === undefined ? "" : ` with code ${exitCode}`}.`,
+        level: isErrorExit ? "error" : "info",
+        title: isErrorExit ? "Command exited with error" : "Command exited",
+        summary: `${command?.name || id} exited${inferredExitCode === null || inferredExitCode === undefined ? "" : ` with code ${inferredExitCode}`}.`,
           commandId: id,
           commandName: command?.name || "",
-        details: { exitCode, logPath: info?.logPath || getLogPath(id) }
+        details: { exitCode: inferredExitCode, logPath }
       });
-      if (exitCode !== 0 && exitCode !== null && exitCode !== undefined) {
-        showErrorReminder(command, `${command?.name || id} 已退出，退出码 ${exitCode}。`);
+      if (isErrorExit) {
+        showErrorReminder(command, `${command?.name || id} 已退出，退出码 ${inferredExitCode}。`);
       }
         changed = true;
         refreshTrayMenu();
@@ -831,6 +844,37 @@ async function startCommand(command) {
       shellPid = launchResult.shellPid;
       if (Number.isNaN(runtimePid)) {
         throw new Error(`Could not determine process PID from PowerShell output: ${stdout}`);
+      }
+      await sleepMs(250);
+      if (!pidExists(runtimePid)) {
+        const logTail = readLogTail(logPath, 4000);
+        const launchError = new Error(logTail || "Command exited immediately after launch.");
+        const hint = inferCommandHint(command, launchError, logTail) || "命令启动后立即退出，请检查命令与工作目录。";
+        updateCommand(command.id, () => ({
+          lastExitCode: 1,
+          lastStoppedAt: nowIso(),
+          updatedAt: nowIso(),
+          lastState: "error",
+          lastHint: hint
+        }));
+        logEvent({
+          category: "command",
+          level: "error",
+          title: "Command start failed",
+          summary: `${command.name} exited immediately after launch.`,
+          commandId: command.id,
+          commandName: command.name,
+          details: { logPath, pid: runtimePid }
+        });
+        showErrorReminder(command, hint);
+        return createStatus({
+          state: "error",
+          message: hint,
+          logPath,
+          hint,
+          lastExitCode: 1,
+          stoppedAt: nowIso()
+        });
       }
     } catch (error) {
       const hint = inferCommandHint(command, error);
@@ -1387,6 +1431,12 @@ safeHandle("app:check-for-updates", async () => {
     return { ok: false, error: String(error.message || error) };
   }
 });
+safeHandle("app:get-productivity-overview", async () => productivityTools.getOverview());
+safeHandle("app:save-productivity-settings", async (_event, payload) => productivityTools.saveSettings(payload));
+safeHandle("app:scan-duplicate-files", async (_event, payload) => await productivityTools.scanDuplicateFiles(payload || {}));
+safeHandle("app:scan-stale-files", async (_event, payload) => await productivityTools.scanStaleFiles(payload || {}));
+safeHandle("app:delete-files", async (_event, payload) => await productivityTools.deleteFiles(payload || {}));
+safeHandle("app:archive-files", async (_event, payload) => await productivityTools.archiveFiles(payload || {}));
 
 function setupAutoUpdater() {
   if (isDev) {
@@ -1448,6 +1498,7 @@ app.whenReady().then(async () => {
   saveSettings(loadSettings());
   ensureTray();
   watchProcesses();
+  productivityTools.start();
   refreshMatchedProcessCache(true).catch(() => {});
   await createWindow();
   nativeTheme.on("updated", () => updateRenderer());
@@ -1463,6 +1514,7 @@ app.whenReady().then(async () => {
 
 app.on("before-quit", () => {
   forceQuit = true;
+  productivityTools.stop();
   if (processScannerWorker && !processScannerWorker.killed) {
     processScannerWorker.kill();
   }
