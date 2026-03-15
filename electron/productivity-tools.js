@@ -7,6 +7,33 @@ const net = require("node:net");
 
 const execFileAsync = util.promisify(execFile);
 
+// Helper function to sleep for a given number of milliseconds
+function sleepMs(ms) {
+  return new Promise((resolve) => setTimeout(resolve, ms));
+}
+
+// Check if a process is still running
+async function isProcessRunning(pid) {
+  try {
+    if (process.platform === "win32") {
+      const { stdout } = await execFileAsync("tasklist", ["/FI", `PID eq ${pid}`, "/NH"], {
+        encoding: "utf8",
+        windowsHide: true
+      });
+      return stdout.includes(String(pid));
+    } else {
+      try {
+        process.kill(pid, 0);
+        return true;
+      } catch {
+        return false;
+      }
+    }
+  } catch {
+    return false;
+  }
+}
+
 // 视频转 GIF 配置
 const VIDEO_TO_GIF_DEFAULTS = {
   fps: 10,
@@ -692,19 +719,49 @@ async function terminateProcessByPid(pid) {
 
   try {
     if (process.platform === "win32") {
-      const { stderr } = await execFileAsync("taskkill", ["/PID", String(pid), "/T", "/F"], {
+      // First try PowerShell's Stop-Process (more reliable)
+      try {
+        const psScript = `Stop-Process -Id ${numericPid} -Force -ErrorAction SilentlyContinue`;
+        await execFileAsync("powershell", ["-NoProfile", "-ExecutionPolicy", "Bypass", "-Command", psScript], {
+          encoding: "utf8",
+          windowsHide: true,
+          timeout: 10000
+        });
+        
+        // Verify if process has terminated
+        await sleepMs(500);
+        if (!await isProcessRunning(numericPid)) {
+          return { success: true, pid: numericPid };
+        }
+      } catch (psError) {
+        // Fallback to taskkill if PowerShell fails
+        console.warn("PowerShell Stop-Process failed, falling back to taskkill:", psError.message);
+      }
+      
+      // Use taskkill as fallback
+      const { stderr } = await execFileAsync("taskkill", ["/PID", String(numericPid), "/T", "/F"], {
         encoding: "utf8",
         windowsHide: true,
         timeout: 10000
       });
-      // taskkill 成功时 stderr 可能为空或包含 "SUCCESS"
-      return { success: true, pid };
+      
+      // Verify if process has terminated
+      await sleepMs(500);
+      if (await isProcessRunning(numericPid)) {
+        throw new Error("Process could not be terminated");
+      }
+      
+      return { success: true, pid: numericPid };
     } else {
-      process.kill(-numericPid, "SIGTERM");
-      return { success: true, pid };
+      try {
+        process.kill(-numericPid, "SIGTERM");
+      } catch {
+        process.kill(numericPid, "SIGTERM");
+      }
+      return { success: true, pid: numericPid };
     }
   } catch (error) {
-    // 检查是否是权限问题
+    // Check if it's a permission issue
     const errorMsg = error.message || "";
     if (errorMsg.includes("Access is denied") || errorMsg.includes("拒绝访问") || errorMsg.includes("EPERM")) {
       throw new Error("Permission denied. Please run the application as administrator to terminate this process.");
