@@ -160,24 +160,29 @@ function DuplicateRow({ group, t, onDelete, onSetKeep, onOpenFolder, selectedSet
                   checked={selectedSet.has(file.path)}
                   onChange={() => onToggleSelect(file.path)}
                 />
-                <span className="file-name">{file.name}</span>
-                <span className="file-path">{file.path}</span>
-                <span className="file-size">{formatBytes(file.size)}</span>
-                <button
-                  type="button"
-                  className="btn btn-xs ghost"
-                  onClick={() => onSetKeep(group, file.path)}
-                  title={t("setAsKeep") || "Set as keep"}
-                >
-                  ★
-                </button>
-                <button
-                  type="button"
-                  className="btn btn-xs ghost"
-                  onClick={() => onOpenFolder(file.path)}
-                >
-                  📁
-                </button>
+                <div className="file-meta">
+                  <span className="file-name">{file.name}</span>
+                  <span className="file-location">{t("fileLocation")}: {file.directory || "--"}</span>
+                  <span className="file-path">{file.path}</span>
+                </div>
+                <div className="file-actions">
+                  <span className="file-size">{formatBytes(file.size)}</span>
+                  <button
+                    type="button"
+                    className="btn btn-xs ghost"
+                    onClick={() => onSetKeep(group, file.path)}
+                    title={t("setAsKeep") || "Set as keep"}
+                  >
+                    ★
+                  </button>
+                  <button
+                    type="button"
+                    className="btn btn-xs ghost"
+                    onClick={() => onOpenFolder(file.path)}
+                  >
+                    📁
+                  </button>
+                </div>
               </label>
             </div>
           ))}
@@ -189,7 +194,7 @@ function DuplicateRow({ group, t, onDelete, onSetKeep, onOpenFolder, selectedSet
 
 function StaleRow({ item, t, onArchive, onDelete }) {
   return (
-    <div className="result-row action-row">
+    <div className="result-row action-row stale-row">
       <div className="result-row-main">
         <div className="result-row-title">{item.name}</div>
         <div className="result-row-sub clamp-2">{item.path}</div>
@@ -198,9 +203,9 @@ function StaleRow({ item, t, onArchive, onDelete }) {
         <strong>{item.ageDays}d</strong>
         <span>{formatBytes(item.size)}</span>
       </div>
-      <div className="row-actions">
-        <button className="btn btn-sm ghost" onClick={() => onArchive(item)}>{t("archiveOne")}</button>
-        <button className="btn btn-sm secondary" onClick={() => onDelete(item)}>{t("deleteOne")}</button>
+      <div className="row-actions stale-row-actions">
+        <button className="btn btn-sm secondary stale-action-btn" onClick={() => onArchive(item)}>{t("archiveOne")}</button>
+        <button className="btn btn-sm secondary stale-action-btn" onClick={() => onDelete(item)}>{t("deleteOne")}</button>
       </div>
     </div>
   );
@@ -538,43 +543,52 @@ export default function ProductivityHub({ active, t, onToast }) {
                   <div className="section-title">{t("fileExpiryAssistant")}</div>
                   <div className="section-copy">{t("fileExpiryDesc")}</div>
                 </div>
-                <button className="btn btn-sm teal" onClick={runStaleScan} disabled={busy.stale}>{busy.stale ? t("scanRunning") : t("scanStaleFiles")}</button>
               </div>
-              <div className="stale-form-grid">
-                <label className="field-shell field-span-2">
-                  <span className="field-label">{t("monitorFolders")}</span>
-                  <textarea className="field-input field-textarea" rows="3" value={staleRootsText} onChange={(event) => setStaleRootsText(event.target.value)} />
-                </label>
-                <label className="field-shell">
-                  <span className="field-label">{t("staleDays")}</span>
-                  <input className="field-input" type="number" min="1" value={staleDays} onChange={(event) => setStaleDays(event.target.value)} />
-                </label>
-                <label className="field-shell">
-                  <span className="field-label">{t("archiveFolder")}</span>
-                  <input className="field-input" value={archiveDir} onChange={(event) => setArchiveDir(event.target.value)} />
-                </label>
-              </div>
-              <div className="inline-field-row">
-                <button className="btn btn-sm ghost" onClick={() => appendFolder(setStaleRootsText, staleRootsText)}>{t("browseFolder")}</button>
-                <button className="btn btn-sm ghost" onClick={saveFileExpirySettings}>{t("saveSettings")}</button>
-              </div>
-              <ScanActivity busy={busy.stale} progress={staleProgress} phase={STALE_SCAN_PHASES[stalePhaseIndex]} phases={STALE_SCAN_PHASES} t={t} />
-              <div className="summary-grid four-col">
-                <SummaryCard label={t("staleFileCount")} value={String(staleResult?.summary?.staleFileCount || 0)} meta={t("staleFilesHint")} />
-                <SummaryCard label={t("reclaimableSpace")} value={formatBytes(staleResult?.summary?.reclaimableBytes || 0)} meta={t("fileExpiryAssistant")} />
-                <SummaryCard label={t("staleDays")} value={String(staleDays)} meta={t("monitorFolders")} />
-                <SummaryCard label={t("lastScanAt")} value={formatDate(overview?.fileExpiry?.lastScanAt)} meta={t("lastUpdatedAt")} />
-              </div>
-              <div className="standard-list-card">
-                <div className="field-label">{t("staleQueueTitle")}</div>
-                <div className="standard-list">
-                  {displayedStale.length ? displayedStale.map((item) => <StaleRow key={item.path} item={item} t={t} onArchive={archiveStaleItem} onDelete={deleteStaleItem} />) : <div className="empty slim-empty">{t("staleFilesEmpty")}</div>}
+              <div className="stale-stack">
+                <div className="stale-config-card">
+                  <div className="stale-form-grid">
+                    <label className="field-shell field-span-2">
+                      <span className="field-label">{t("monitorFolders")}</span>
+                      <textarea className="field-input field-textarea" rows="3" value={staleRootsText} onChange={(event) => setStaleRootsText(event.target.value)} />
+                    </label>
+                    <label className="field-shell">
+                      <span className="field-label">{t("staleDays")}</span>
+                      <input className="field-input" type="number" min="1" value={staleDays} onChange={(event) => setStaleDays(event.target.value)} />
+                    </label>
+                    <label className="field-shell">
+                      <span className="field-label">{t("archiveFolder")}</span>
+                      <input className="field-input" value={archiveDir} onChange={(event) => setArchiveDir(event.target.value)} />
+                    </label>
+                  </div>
+                  <div className="inline-field-row stale-toolbar">
+                    <button className="btn btn-sm secondary stale-control-btn" onClick={() => appendFolder(setStaleRootsText, staleRootsText)}>{t("browseFolder")}</button>
+                    <button className="btn btn-sm secondary stale-control-btn" onClick={saveFileExpirySettings}>{t("saveSettings")}</button>
+                    <button className="btn btn-sm teal stale-control-btn" onClick={runStaleScan} disabled={busy.stale}>
+                      {busy.stale ? t("scanRunning") : t("scanStaleFiles")}
+                    </button>
+                  </div>
+                  <ScanActivity busy={busy.stale} progress={staleProgress} phase={STALE_SCAN_PHASES[stalePhaseIndex]} phases={STALE_SCAN_PHASES} t={t} />
                 </div>
-                {hasMoreStale && (
-                  <button className="btn btn-sm ghost" onClick={() => setStalePage((p) => p + 1)}>
-                    {t("loadMore") || "加载更多"} ({stalePriority.length - displayedStale.length})
-                  </button>
-                )}
+
+                <div className="stale-results-panel">
+                  <div className="summary-grid four-col stale-summary-grid">
+                    <SummaryCard label={t("staleFileCount")} value={String(staleResult?.summary?.staleFileCount || 0)} meta={t("staleFilesHint")} />
+                    <SummaryCard label={t("reclaimableSpace")} value={formatBytes(staleResult?.summary?.reclaimableBytes || 0)} meta={t("fileExpiryAssistant")} />
+                    <SummaryCard label={t("staleDays")} value={String(staleDays)} meta={t("monitorFolders")} />
+                    <SummaryCard label={t("lastScanAt")} value={formatDate(overview?.fileExpiry?.lastScanAt)} meta={t("lastUpdatedAt")} />
+                  </div>
+                  <div className="standard-list-card stale-results-card">
+                    <div className="field-label">{t("staleQueueTitle")}</div>
+                    <div className="standard-list">
+                      {displayedStale.length ? displayedStale.map((item) => <StaleRow key={item.path} item={item} t={t} onArchive={archiveStaleItem} onDelete={deleteStaleItem} />) : <div className="empty slim-empty">{t("staleFilesEmpty")}</div>}
+                    </div>
+                    {hasMoreStale && (
+                      <button className="btn btn-sm ghost" onClick={() => setStalePage((p) => p + 1)}>
+                        {t("loadMore") || "加载更多"} ({stalePriority.length - displayedStale.length})
+                      </button>
+                    )}
+                  </div>
+                </div>
               </div>
             </section>
           </div>
