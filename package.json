@@ -35,7 +35,7 @@
       "output": "release",
       "buildResources": "electron/assets"
     },
-    "icon": "icon.ico",
+      "icon": "electron/assets/icon.ico",
     "win": {
       "target": [
         {
@@ -45,7 +45,7 @@
           ]
         }
       ],
-      "icon": "icon.ico",
+      "icon": "electron/assets/icon.ico",
       "signAndEditExecutable": false
     },
     "nsis": {
@@ -56,18 +56,18 @@
       "include": "scripts/installer.nsh",
       "createDesktopShortcut": true,
       "createStartMenuShortcut": true,
-      "installerIcon": "icon.ico",
-      "uninstallerIcon": "icon.ico",
-      "installerHeaderIcon": "icon.ico"
+      "installerIcon": "electron/assets/icon.ico",
+      "uninstallerIcon": "electron/assets/icon.ico",
+      "installerHeaderIcon": "electron/assets/icon.ico"
     },
     "linux": {
-      "icon": "icon-256.png",
+      "icon": "electron/assets/icon-256.png",
       "target": [
         "AppImage"
       ]
     },
     "mac": {
-      "icon": "icon-256.png",
+      "icon": "electron/assets/icon-256.png",
       "target": [
         "dmg"
       ]
