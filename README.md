@@ -26,15 +26,14 @@
 - `python server.py`
 - 任何需要长期驻留、查看日志、随时重启或结束的本地 CLI 进程
 
-## 演示画廊（图文表）
+## 演示画廊
 
-> 说明：以下图片/视频路径为项目内约定位置。你可以直接替换同名文件，README 会自动显示最新效果。
 
-### 教程示例
+
 
 ![productivity-scans.mp4](docs/media/videos/productivity-scans.gif)
 
-### 使用场景
+
 
 | 场景 | 预览 |
 | --- | --- |
@@ -195,3 +194,27 @@ sequenceDiagram
 
 本项目采用 [MIT License](LICENSE) 开源协议。
 
+### ☕ 为爱发电
+
+
+<div align="center">
+
+**如果这个项目对您有帮助，请给我们一个 ⭐️ Star！**
+
+
+**如果你觉得这个项目有用，可以请开发者喝杯咖啡 ☕**
+
+<img src="docs\media\screenshots\donate-qr.png" alt="赞赏码" width="200">
+
+
+## Star History
+
+<picture>
+    <source media="(prefers-color-scheme: dark)" srcset="https://api.star-history.com/svg?repos=Alleyf/CommandHub&type=Date&theme=dark" />
+    <source media="(prefers-color-scheme: light)" srcset="https://api.star-history.com/svg?repos=Alleyf/CommandHub&type=Date" />
+    <img alt="Star History Chart" src="https://api.star-history.com/svg?repos=Alleyf/CommandHub&type=Date" />
+</picture>
+
+### 🏠 [⬆ 回到顶部](https://github.com/Alleyf/CommandHub#readme)
+
+</div>
