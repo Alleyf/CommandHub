@@ -1452,7 +1452,21 @@ safeHandle("app:export-global-logs", async (_event, options) => {
 safeHandle("app:check-for-updates", async () => {
   try {
     const result = await autoUpdater.checkForUpdates();
-    return { ok: true, result };
+    const info = result?.updateInfo || null;
+    return {
+      ok: true,
+      updateInfo: info ? {
+        version: String(info.version || ""),
+        releaseDate: info.releaseDate || null,
+        files: Array.isArray(info.files)
+          ? info.files.map((file) => ({
+            url: String(file?.url || ""),
+            sha512: String(file?.sha512 || ""),
+            size: Number(file?.size || 0)
+          }))
+          : []
+      } : null
+    };
   } catch (error) {
     return { ok: false, error: String(error.message || error) };
   }
