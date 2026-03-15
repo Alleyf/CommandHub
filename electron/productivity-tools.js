@@ -719,10 +719,12 @@ async function terminateProcessByPid(pid) {
 
   try {
     if (process.platform === "win32") {
+      const processNotFoundPattern = /no running instance|not found|not exist|没有运行的任务|找不到|不存在/i;
+
       // First try PowerShell's Stop-Process (more reliable)
       try {
         const psScript = `Stop-Process -Id ${numericPid} -Force -ErrorAction SilentlyContinue`;
-        await execFileAsync("powershell", ["-NoProfile", "-ExecutionPolicy", "Bypass", "-Command", psScript], {
+        await execFileAsync("powershell.exe", ["-NoProfile", "-ExecutionPolicy", "Bypass", "-Command", psScript], {
           encoding: "utf8",
           windowsHide: true,
           timeout: 10000
@@ -739,11 +741,18 @@ async function terminateProcessByPid(pid) {
       }
       
       // Use taskkill as fallback
-      const { stderr } = await execFileAsync("taskkill", ["/PID", String(numericPid), "/T", "/F"], {
-        encoding: "utf8",
-        windowsHide: true,
-        timeout: 10000
-      });
+      try {
+        await execFileAsync("taskkill", ["/PID", String(numericPid), "/T", "/F"], {
+          encoding: "utf8",
+          windowsHide: true,
+          timeout: 10000
+        });
+      } catch (taskkillError) {
+        const message = `${taskkillError?.message || ""} ${taskkillError?.stderr || ""}`.trim();
+        if (!processNotFoundPattern.test(message)) {
+          throw taskkillError;
+        }
+      }
       
       // Verify if process has terminated
       await sleepMs(500);
@@ -770,48 +779,82 @@ async function terminateProcessByPid(pid) {
   }
 }
 
+function endpointMatchesPort(endpoint, port) {
+  const text = String(endpoint || "").trim();
+  if (!text) return false;
+  const match = text.match(/:(\d+)\]?$/);
+  return !!match && Number(match[1]) === Number(port);
+}
+
+async function findPidByPort(port) {
+  const numericPort = Number(port);
+  if (!numericPort) return null;
+
+  if (process.platform === "win32") {
+    // Prefer native PowerShell APIs, fallback to netstat parsing.
+    try {
+      const psScript = `
+$pid = (Get-NetTCPConnection -LocalPort ${numericPort} -ErrorAction SilentlyContinue | Select-Object -First 1 -ExpandProperty OwningProcess)
+if (-not $pid) {
+  $pid = (Get-NetUDPEndpoint -LocalPort ${numericPort} -ErrorAction SilentlyContinue | Select-Object -First 1 -ExpandProperty OwningProcess)
+}
+if ($pid) { Write-Output $pid }
+`.trim();
+      const { stdout } = await execFileAsync("powershell.exe", ["-NoProfile", "-Command", psScript], {
+        encoding: "utf8",
+        windowsHide: true,
+        timeout: 10000
+      });
+      const pid = Number(String(stdout || "").trim());
+      if (pid && !Number.isNaN(pid)) return pid;
+    } catch {
+      // Ignore and fallback to netstat parsing.
+    }
+
+    const { stdout } = await execFileAsync("cmd.exe", ["/d", "/c", "netstat -ano"], {
+      encoding: "utf8",
+      windowsHide: true,
+      timeout: 10000
+    });
+    const lines = String(stdout || "").split(/\r?\n/).map((line) => line.trim()).filter(Boolean);
+    for (const line of lines) {
+      if (!/^(TCP|UDP)\s+/i.test(line)) continue;
+      const parts = line.split(/\s+/);
+      if (parts.length < 4) continue;
+      const localAddress = parts[1] || "";
+      const pid = Number(parts[parts.length - 1]);
+      if (endpointMatchesPort(localAddress, numericPort) && pid && !Number.isNaN(pid)) {
+        return pid;
+      }
+    }
+    return null;
+  }
+
+  try {
+    const { stdout } = await execFileAsync("lsof", ["-i", `:${numericPort}`, "-t"], {
+      encoding: "utf8",
+      timeout: 10000
+    });
+    const pidText = String(stdout || "").split(/\r?\n/).map((v) => v.trim()).find(Boolean);
+    const pid = Number(pidText || 0);
+    return pid && !Number.isNaN(pid) ? pid : null;
+  } catch {
+    return null;
+  }
+}
+
 // 根据端口查找并结束进程
-async function releasePort(port) {
+async function releasePort(port, hintPid = null) {
   const numericPort = Number(port);
   if (!numericPort || numericPort < 1 || numericPort > 65535) {
     throw new Error("Invalid port number");
   }
 
   try {
-    // 获取占用该端口的进程
-    let targetPid = null;
-
-    if (process.platform === "win32") {
-      // 使用更精确的匹配方式：确保端口号后面跟着空格或冒号
-      const { stdout } = await execFileAsync("cmd.exe", ["/d", "/c", "netstat -ano"], {
-        encoding: "utf8",
-        windowsHide: true,
-        timeout: 10000
-      });
-
-      const lines = String(stdout || "").split(/\r?\n/).map((line) => line.trim()).filter(Boolean);
-      for (const line of lines) {
-        // Windows netstat 格式: TCP 0.0.0.0:8080 0.0.0.0:0 LISTENING 1234
-        // 或 IPv6: TCP [::]:8080 [::]:0 LISTENING 1234
-        // 需要精确匹配端口号，避免 8080 匹配到 18080
-        const portPattern = new RegExp(`:${numericPort}(\\s|:)`, "i");
-        if (!portPattern.test(line)) continue;
-
-        // 匹配 LISTENING 状态的端口
-        const match = line.match(/LISTENING\s+(\d+)/i);
-        if (match) {
-          targetPid = Number(match[1]);
-          break;
-        }
-      }
-    } else {
-      const { stdout } = await execFileAsync("lsof", ["-i", `:${numericPort}`, "-t"], {
-        encoding: "utf8"
-      });
-      const pid = String(stdout || "").trim();
-      if (pid) {
-        targetPid = Number(pid);
-      }
+    // 优先使用前端传回的 PID（来自最新扫描结果），失败后再按端口反查。
+    let targetPid = Number(hintPid || 0) || null;
+    if (!targetPid) {
+      targetPid = await findPidByPort(numericPort);
     }
 
     if (!targetPid) {
@@ -1084,8 +1127,8 @@ function createProductivityTools({ app, store, Notification, logEvent }) {
       return result;
     },
     async releasePort(payload) {
-      const { port } = payload || {};
-      const result = await releasePort(port);
+      const { port, pid } = payload || {};
+      const result = await releasePort(port, pid);
       logEvent?.({
         category: "productivity",
         level: result.success ? "success" : "warning",

@@ -64,16 +64,17 @@ export function PortScanner({ t, onMessage }) {
   async function releasePort(port, pid) {
     setReleasingPort(port);
     try {
-      const result = await window.commandHub.releasePort({ port });
+      const result = await window.commandHub.releasePort({ port, pid });
       if (result.success) {
         onMessage?.(t("portScannerPortReleased", { port, process: result.processName, pid: result.pid }), "success");
         // 重新扫描
         await startScan();
       } else {
-        onMessage?.(t("portScannerReleaseFailed", { message: result.message }), "error");
+        onMessage?.(t("portScannerReleaseFailed", { message: result.message, error: result.message }), "error");
       }
     } catch (error) {
-      onMessage?.(t("portScannerReleaseFailed", { message: error.message || String(error) }), "error");
+      const msg = error.message || String(error);
+      onMessage?.(t("portScannerReleaseFailed", { message: msg, error: msg }), "error");
     } finally {
       setReleasingPort(null);
     }
