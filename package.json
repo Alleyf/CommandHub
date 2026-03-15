@@ -11,7 +11,7 @@
     "start": "concurrently -k \"npm:dev\" \"npm:electron:dev\"",
     "electron:dev": "wait-on http://127.0.0.1:5173 && electron .",
     "build:web": "vite build",
-    "build": "npm run build:web",
+    "build": "npm run brand:generate && npm run build:web",
     "dist": "npm run build && electron-builder",
     "release": "npm run build && electron-builder --publish always"
   },
@@ -35,7 +35,7 @@
       "output": "release",
       "buildResources": "electron/assets"
     },
-    "icon": "electron/assets/icon.ico",
+    "icon": "icon.ico",
     "win": {
       "target": [
         {
@@ -45,7 +45,7 @@
           ]
         }
       ],
-      "icon": "electron/assets/icon.ico",
+      "icon": "icon.ico",
       "signAndEditExecutable": false
     },
     "nsis": {
@@ -56,18 +56,18 @@
       "include": "scripts/installer.nsh",
       "createDesktopShortcut": true,
       "createStartMenuShortcut": true,
-      "installerIcon": "electron/assets/icon.ico",
-      "uninstallerIcon": "electron/assets/icon.ico",
-      "installerHeaderIcon": "electron/assets/icon.ico"
+      "installerIcon": "icon.ico",
+      "uninstallerIcon": "icon.ico",
+      "installerHeaderIcon": "icon.ico"
     },
     "linux": {
-      "icon": "electron/assets/icon-256.png",
+      "icon": "icon-256.png",
       "target": [
         "AppImage"
       ]
     },
     "mac": {
-      "icon": "electron/assets/icon-256.png",
+      "icon": "icon-256.png",
       "target": [
         "dmg"
       ]
