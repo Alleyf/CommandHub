@@ -1,9 +1,15 @@
+.claude/
+.cli/
+.qoder/
 .commandhub/
-..codebuddy/
+.codebuddy/
 .codex/
+slill/
 __pycache__/
 *.pyc
 node_modules/
 dist/
 release/
 electron-cache/
+cli/
+skills/

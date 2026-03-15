@@ -1339,6 +1339,32 @@ safeHandle("app:pick-directory", async () => {
   });
   return result.canceled ? "" : result.filePaths[0];
 });
+safeHandle("app:pick-video-file", async () => {
+  const result = await dialog.showOpenDialog(mainWindow, {
+    properties: ["openFile"],
+    title: "Select video file",
+    filters: [
+      { name: "Video Files", extensions: ["mp4", "avi", "mov", "mkv", "webm", "wmv", "flv"] },
+      { name: "All Files", extensions: ["*"] }
+    ]
+  });
+  return result.canceled ? "" : result.filePaths[0];
+});
+safeHandle("app:pick-gif-save-path", async () => {
+  const result = await dialog.showSaveDialog(mainWindow, {
+    title: "Save GIF file",
+    defaultPath: "output.gif",
+    filters: [
+      { name: "GIF Image", extensions: ["gif"] }
+    ]
+  });
+  return result.canceled ? "" : result.filePath;
+});
+safeHandle("app:open-path", async (_event, targetPath) => {
+  if (targetPath) {
+    await shell.openPath(targetPath);
+  }
+});
 safeHandle("app:export-commands", async () => {
   const result = await dialog.showSaveDialog(mainWindow, {
     title: "Export command list",
@@ -1437,6 +1463,9 @@ safeHandle("app:scan-duplicate-files", async (_event, payload) => await producti
 safeHandle("app:scan-stale-files", async (_event, payload) => await productivityTools.scanStaleFiles(payload || {}));
 safeHandle("app:delete-files", async (_event, payload) => await productivityTools.deleteFiles(payload || {}));
 safeHandle("app:archive-files", async (_event, payload) => await productivityTools.archiveFiles(payload || {}));
+safeHandle("app:convert-video-to-gif", async (_event, payload) => await productivityTools.convertVideoToGif(payload || {}));
+safeHandle("app:scan-ports", async (_event, payload) => await productivityTools.scanPorts(payload || {}));
+safeHandle("app:release-port", async (_event, payload) => await productivityTools.releasePort(payload || {}));
 
 function setupAutoUpdater() {
   if (isDev) {

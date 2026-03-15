@@ -31,6 +31,12 @@ contextBridge.exposeInMainWorld("commandHub", {
   scanStaleFiles: (payload) => ipcRenderer.invoke("app:scan-stale-files", payload),
   deleteFiles: (payload) => ipcRenderer.invoke("app:delete-files", payload),
   archiveFiles: (payload) => ipcRenderer.invoke("app:archive-files", payload),
+  convertVideoToGif: (payload) => ipcRenderer.invoke("app:convert-video-to-gif", payload),
+  scanPorts: (payload) => ipcRenderer.invoke("app:scan-ports", payload),
+  releasePort: (payload) => ipcRenderer.invoke("app:release-port", payload),
+  pickVideoFile: () => ipcRenderer.invoke("app:pick-video-file"),
+  pickGifSavePath: () => ipcRenderer.invoke("app:pick-gif-save-path"),
+  openPath: (path) => ipcRenderer.invoke("app:open-path", path),
   getPathForFile: (file) => {
     try {
       return webUtils.getPathForFile(file);

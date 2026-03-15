@@ -1,4 +1,6 @@
 import { useEffect, useMemo, useState } from "react";
+import { VideoToGif } from "./VideoToGif";
+import { PortScanner } from "./PortScanner";
 
 const DUPLICATE_SCAN_PHASES = ["indexing", "comparing", "ranking"];
 const STALE_SCAN_PHASES = ["indexing", "aging", "prioritizing"];
@@ -100,19 +102,87 @@ function UsageRow({ item, totalMs }) {
   );
 }
 
-function DuplicateRow({ group, t, onDelete }) {
+function DuplicateRow({ group, t, onDelete, onSetKeep, onOpenFolder, selectedSet, onToggleSelect, expandedSet, onToggleExpand }) {
+  const isExpanded = expandedSet.has(group.id);
   const duplicateFiles = group.files.filter((item) => item.path !== group.keepPath);
+  const keepFile = group.files.find((item) => item.path === group.keepPath) || group.files[0];
   const wastedBytes = duplicateFiles.reduce((sum, item) => sum + Number(item.size || 0), 0);
+  const selectedCount = duplicateFiles.filter((f) => selectedSet.has(f.path)).length;
+
   return (
-    <div className="action-card compact-card">
-      <div className="action-card-head">
-        <div>
-          <div className="result-row-title">{group.files[0]?.name}</div>
-          <div className="result-row-sub">{duplicateFiles.length} {t("duplicateCandidates")} · {formatBytes(wastedBytes)}</div>
+    <div className="duplicate-group-card">
+      <div className="duplicate-group-header" onClick={() => onToggleExpand(group.id)}>
+        <span className={`expand-icon ${isExpanded ? "expanded" : ""}`}>▶</span>
+        <div className="duplicate-group-info">
+          <div className="result-row-title">{keepFile?.name}</div>
+          <div className="result-row-sub">
+            {duplicateFiles.length} {t("duplicateCandidates")} · {formatBytes(wastedBytes)}
+            {selectedCount > 0 && <span className="selected-count"> · {selectedCount} selected</span>}
+          </div>
         </div>
-        <button className="btn btn-sm teal" onClick={() => onDelete(group)}>{t("deleteDuplicates")}</button>
+        <div className="duplicate-group-actions">
+          <button
+            type="button"
+            className="btn btn-sm ghost"
+            onClick={(e) => { e.stopPropagation(); onOpenFolder(keepFile?.path); }}
+          >
+            {t("openFolder") || "Open"}
+          </button>
+          {selectedCount > 0 && (
+            <button
+              type="button"
+              className="btn btn-sm teal"
+              onClick={(e) => { e.stopPropagation(); onDelete(duplicateFiles.filter((f) => selectedSet.has(f.path)).map((f) => f.path)); }}
+            >
+              {t("deleteOne")} ({selectedCount})
+            </button>
+          )}
+        </div>
       </div>
-      <div className="action-card-note">{t("keepFile")}: {group.keepPath}</div>
+      {isExpanded && (
+        <div className="duplicate-files-list">
+          <div className="keep-file-note">
+            <span className="keep-label">{t("keepFile")}:</span> {keepFile?.path} ({formatBytes(keepFile?.size || 0)})
+            <button
+              type="button"
+              className="btn btn-xs ghost"
+              style={{ marginLeft: "8px" }}
+              onClick={() => onOpenFolder(keepFile?.path)}
+            >
+              {t("openFolder") || "Open"}
+            </button>
+          </div>
+          {duplicateFiles.map((file) => (
+            <div key={file.path} className="duplicate-file-item">
+              <label className="checkbox-label">
+                <input
+                  type="checkbox"
+                  checked={selectedSet.has(file.path)}
+                  onChange={() => onToggleSelect(file.path)}
+                />
+                <span className="file-name">{file.name}</span>
+                <span className="file-path">{file.path}</span>
+                <span className="file-size">{formatBytes(file.size)}</span>
+                <button
+                  type="button"
+                  className="btn btn-xs ghost"
+                  onClick={() => onSetKeep(group, file.path)}
+                  title={t("setAsKeep") || "Set as keep"}
+                >
+                  ★
+                </button>
+                <button
+                  type="button"
+                  className="btn btn-xs ghost"
+                  onClick={() => onOpenFolder(file.path)}
+                >
+                  📁
+                </button>
+              </label>
+            </div>
+          ))}
+        </div>
+      )}
     </div>
   );
 }
@@ -139,6 +209,7 @@ function StaleRow({ item, t, onArchive, onDelete }) {
 export default function ProductivityHub({ active, t, onToast }) {
   const [overview, setOverview] = useState(null);
   const [loading, setLoading] = useState(false);
+  const [activeTab, setActiveTab] = useState("screenUsage");
   const [busy, setBusy] = useState({ duplicates: false, stale: false });
   const [duplicateRootsText, setDuplicateRootsText] = useState("");
   const [duplicateStrategy, setDuplicateStrategy] = useState("hash");
@@ -151,6 +222,11 @@ export default function ProductivityHub({ active, t, onToast }) {
   const [staleProgress, setStaleProgress] = useState(0);
   const [duplicatePhaseIndex, setDuplicatePhaseIndex] = useState(0);
   const [stalePhaseIndex, setStalePhaseIndex] = useState(0);
+  const [selectedDuplicates, setSelectedDuplicates] = useState(new Set());
+  const [expandedGroups, setExpandedGroups] = useState(new Set());
+  const [duplicatePage, setDuplicatePage] = useState(1);
+  const [stalePage, setStalePage] = useState(1);
+  const PAGE_SIZE = 10;
 
   async function loadOverview() {
     setLoading(true);
@@ -209,16 +285,26 @@ export default function ProductivityHub({ active, t, onToast }) {
         ...group,
         wastedBytes: group.files.filter((item) => item.path !== group.keepPath).reduce((sum, item) => sum + Number(item.size || 0), 0)
       }))
-      .sort((left, right) => right.wastedBytes - left.wastedBytes)
-      .slice(0, 8);
+      .sort((left, right) => right.wastedBytes - left.wastedBytes);
   }, [duplicateResult]);
+
+  const displayedDuplicates = useMemo(() => {
+    return duplicatePriority.slice(0, duplicatePage * PAGE_SIZE);
+  }, [duplicatePriority, duplicatePage]);
+
+  const hasMoreDuplicates = displayedDuplicates.length < duplicatePriority.length;
 
   const stalePriority = useMemo(() => {
     const items = staleResult?.items || [];
     return [...items]
-      .sort((left, right) => (right.ageDays * Math.max(1, right.size || 0)) - (left.ageDays * Math.max(1, left.size || 0)))
-      .slice(0, 12);
+      .sort((left, right) => (right.ageDays * Math.max(1, right.size || 0)) - (left.ageDays * Math.max(1, left.size || 0)));
   }, [staleResult]);
+
+  const displayedStale = useMemo(() => {
+    return stalePriority.slice(0, stalePage * PAGE_SIZE);
+  }, [stalePriority, stalePage]);
+
+  const hasMoreStale = displayedStale.length < stalePriority.length;
 
   async function appendFolder(setter, currentText) {
     const picked = await window.commandHub.pickDirectory();
@@ -269,11 +355,73 @@ export default function ProductivityHub({ active, t, onToast }) {
     }
   }
 
-  async function deleteDuplicateGroup(group) {
-    const paths = (group?.files || []).filter((item) => item.path !== group.keepPath).map((item) => item.path);
-    if (!paths.length) return;
+  function toggleDuplicateSelection(path) {
+    setSelectedDuplicates((prev) => {
+      const next = new Set(prev);
+      if (next.has(path)) {
+        next.delete(path);
+      } else {
+        next.add(path);
+      }
+      return next;
+    });
+  }
+
+  function toggleGroupExpansion(groupId) {
+    setExpandedGroups((prev) => {
+      const next = new Set(prev);
+      if (next.has(groupId)) {
+        next.delete(groupId);
+      } else {
+        next.add(groupId);
+      }
+      return next;
+    });
+  }
+
+  async function deleteDuplicateGroup(paths) {
+    if (!paths || paths.length === 0) return;
     await window.commandHub.deleteFiles({ paths });
+    setSelectedDuplicates(new Set());
     onToast?.(t("duplicatesDeleteDone", { count: paths.length }), "success");
+    await runDuplicateScan();
+  }
+
+  function setKeepFile(group, filePath) {
+    // 更新本地状态的保留文件
+    setDuplicateResult((prev) => {
+      if (!prev) return prev;
+      const groups = prev.groups.map((g) => {
+        if (g.id === group.id) {
+          return { ...g, keepPath: filePath };
+        }
+        return g;
+      });
+      return { ...prev, groups };
+    });
+    onToast?.(t("keepFileSet") || "Keep file updated", "success");
+  }
+
+  async function openDuplicateFolder(filePath) {
+    if (filePath) {
+      const folderPath = filePath.substring(0, Math.max(filePath.lastIndexOf("\\"), filePath.lastIndexOf("/")));
+      if (folderPath) {
+        await window.commandHub.openPath(folderPath);
+      }
+    }
+  }
+
+  async function deleteAllDuplicates() {
+    if (!duplicateResult?.groups || duplicateResult.groups.length === 0) return;
+    const allPaths = [];
+    for (const group of duplicateResult.groups) {
+      const paths = group.files.filter((f) => f.path !== group.keepPath).map((f) => f.path);
+      allPaths.push(...paths);
+    }
+    if (allPaths.length === 0) return;
+    await window.commandHub.deleteFiles({ paths: allPaths });
+    setSelectedDuplicates(new Set());
+    onToast?.(t("duplicatesDeleteDone", { count: allPaths.length }), "success");
     await runDuplicateScan();
   }
 
@@ -293,6 +441,164 @@ export default function ProductivityHub({ active, t, onToast }) {
     await runStaleScan();
   }
 
+  const TABS = [
+    { id: "screenUsage", label: t("screenUsage") },
+    { id: "duplicates", label: t("duplicateCleaner") },
+    { id: "fileExpiry", label: t("fileExpiryAssistant") },
+    { id: "videoToGif", label: t("videoToGif") },
+    { id: "portScanner", label: t("portScanner") }
+  ];
+
+  const renderTabContent = () => {
+    switch (activeTab) {
+      case "screenUsage":
+        return (
+          <div className="productivity-single-grid">
+            <section className="card refined-panel productivity-block">
+              <div className="block-head">
+                <div>
+                  <div className="section-title">{t("screenUsage")}</div>
+                  <div className="section-copy">{t("screenUsagePanelDesc")}</div>
+                </div>
+                <button className="btn btn-sm ghost" onClick={loadOverview} disabled={loading}>{loading ? t("scanRunning") : t("refresh")}</button>
+              </div>
+              <div className="summary-grid">
+                <SummaryCard label={t("todayTopApps")} value={safeLabel(todayItems[0]?.label, "--")} meta={todayItems[0] ? `${formatDuration(todayItems[0].durationMs)} · ${percent(todayItems[0].durationMs, todayTotalMs)}` : t("screenUsageEmpty")} />
+                <SummaryCard label={t("weekTopApps")} value={safeLabel(weekItems[0]?.label, "--")} meta={weekItems[0] ? `${formatDuration(weekItems[0].durationMs)} · ${percent(weekItems[0].durationMs, weekTotalMs)}` : t("screenUsageEmpty")} />
+              </div>
+              <div className="standard-list-card">
+                <div className="field-label">{t("todayTopApps")}</div>
+                <div className="standard-list">
+                  {todayItems.length ? todayItems.slice(0, 6).map((item) => <UsageRow key={item.id} item={item} totalMs={todayTotalMs} />) : <div className="empty slim-empty">{t("screenUsageEmpty")}</div>}
+                </div>
+              </div>
+            </section>
+          </div>
+        );
+
+      case "duplicates":
+        return (
+          <div className="productivity-single-grid">
+            <section className="card refined-panel productivity-block wide-block">
+              <div className="block-head">
+                <div>
+                  <div className="section-title">{t("duplicateCleaner")}</div>
+                  <div className="section-copy">{t("duplicateCleanerDesc")}</div>
+                </div>
+                <div className="inline-field-row">
+                  {duplicateResult?.summary?.groupCount > 0 && (
+                    <button className="btn btn-sm red" onClick={deleteAllDuplicates} disabled={busy.duplicates}>
+                      {t("deleteAllDuplicates") || "Delete All"}
+                    </button>
+                  )}
+                  <button className="btn btn-sm teal" onClick={runDuplicateScan} disabled={busy.duplicates}>{busy.duplicates ? t("scanRunning") : t("scanDuplicates")}</button>
+                </div>
+              </div>
+              <div className="field-stack">
+                <label className="field-shell">
+                  <span className="field-label">{t("scanFolders")}</span>
+                  <textarea className="field-input field-textarea" rows="3" value={duplicateRootsText} onChange={(event) => setDuplicateRootsText(event.target.value)} />
+                </label>
+                <div className="inline-field-row">
+                  <button className="btn btn-sm ghost" onClick={() => appendFolder(setDuplicateRootsText, duplicateRootsText)}>{t("browseFolder")}</button>
+                  <select className="field-input select-input" value={duplicateStrategy} onChange={(event) => setDuplicateStrategy(event.target.value)}>
+                    <option value="hash">{t("duplicateStrategyHash")}</option>
+                    <option value="name">{t("duplicateStrategyName")}</option>
+                    <option value="size">{t("duplicateStrategySize")}</option>
+                  </select>
+                </div>
+              </div>
+              <ScanActivity busy={busy.duplicates} progress={duplicateProgress} phase={DUPLICATE_SCAN_PHASES[duplicatePhaseIndex]} phases={DUPLICATE_SCAN_PHASES} t={t} />
+              <div className="summary-grid three-col">
+                <SummaryCard label={t("duplicateGroups")} value={String(duplicateResult?.summary?.groupCount || 0)} meta={t("scanFolders")} />
+                <SummaryCard label={t("reclaimableSpace")} value={formatBytes(duplicateResult?.summary?.wastedBytes || 0)} meta={t("duplicateWasteHint")} />
+                <SummaryCard label={t("scannedFiles")} value={String(duplicateResult?.scannedFileCount || 0)} meta={t("lastUpdatedAt")} />
+              </div>
+              <div className="standard-list-card">
+                <div className="field-label">{t("duplicateGroups")}</div>
+                <div className="standard-list">
+                  {displayedDuplicates.length ? displayedDuplicates.map((group) => <DuplicateRow key={group.id} group={group} t={t} onDelete={deleteDuplicateGroup} onSetKeep={setKeepFile} onOpenFolder={openDuplicateFolder} selectedSet={selectedDuplicates} onToggleSelect={toggleDuplicateSelection} expandedSet={expandedGroups} onToggleExpand={toggleGroupExpansion} />) : <div className="empty slim-empty">{t("duplicatesEmpty")}</div>}
+                </div>
+                {hasMoreDuplicates && (
+                  <button className="btn btn-sm ghost" onClick={() => setDuplicatePage((p) => p + 1)}>
+                    {t("loadMore") || "加载更多"} ({duplicatePriority.length - displayedDuplicates.length})
+                  </button>
+                )}
+              </div>
+            </section>
+          </div>
+        );
+
+      case "fileExpiry":
+        return (
+          <div className="productivity-single-grid">
+            <section className="card refined-panel productivity-block wide-block">
+              <div className="block-head">
+                <div>
+                  <div className="section-title">{t("fileExpiryAssistant")}</div>
+                  <div className="section-copy">{t("fileExpiryDesc")}</div>
+                </div>
+                <button className="btn btn-sm teal" onClick={runStaleScan} disabled={busy.stale}>{busy.stale ? t("scanRunning") : t("scanStaleFiles")}</button>
+              </div>
+              <div className="stale-form-grid">
+                <label className="field-shell field-span-2">
+                  <span className="field-label">{t("monitorFolders")}</span>
+                  <textarea className="field-input field-textarea" rows="3" value={staleRootsText} onChange={(event) => setStaleRootsText(event.target.value)} />
+                </label>
+                <label className="field-shell">
+                  <span className="field-label">{t("staleDays")}</span>
+                  <input className="field-input" type="number" min="1" value={staleDays} onChange={(event) => setStaleDays(event.target.value)} />
+                </label>
+                <label className="field-shell">
+                  <span className="field-label">{t("archiveFolder")}</span>
+                  <input className="field-input" value={archiveDir} onChange={(event) => setArchiveDir(event.target.value)} />
+                </label>
+              </div>
+              <div className="inline-field-row">
+                <button className="btn btn-sm ghost" onClick={() => appendFolder(setStaleRootsText, staleRootsText)}>{t("browseFolder")}</button>
+                <button className="btn btn-sm ghost" onClick={saveFileExpirySettings}>{t("saveSettings")}</button>
+              </div>
+              <ScanActivity busy={busy.stale} progress={staleProgress} phase={STALE_SCAN_PHASES[stalePhaseIndex]} phases={STALE_SCAN_PHASES} t={t} />
+              <div className="summary-grid four-col">
+                <SummaryCard label={t("staleFileCount")} value={String(staleResult?.summary?.staleFileCount || 0)} meta={t("staleFilesHint")} />
+                <SummaryCard label={t("reclaimableSpace")} value={formatBytes(staleResult?.summary?.reclaimableBytes || 0)} meta={t("fileExpiryAssistant")} />
+                <SummaryCard label={t("staleDays")} value={String(staleDays)} meta={t("monitorFolders")} />
+                <SummaryCard label={t("lastScanAt")} value={formatDate(overview?.fileExpiry?.lastScanAt)} meta={t("lastUpdatedAt")} />
+              </div>
+              <div className="standard-list-card">
+                <div className="field-label">{t("staleQueueTitle")}</div>
+                <div className="standard-list">
+                  {displayedStale.length ? displayedStale.map((item) => <StaleRow key={item.path} item={item} t={t} onArchive={archiveStaleItem} onDelete={deleteStaleItem} />) : <div className="empty slim-empty">{t("staleFilesEmpty")}</div>}
+                </div>
+                {hasMoreStale && (
+                  <button className="btn btn-sm ghost" onClick={() => setStalePage((p) => p + 1)}>
+                    {t("loadMore") || "加载更多"} ({stalePriority.length - displayedStale.length})
+                  </button>
+                )}
+              </div>
+            </section>
+          </div>
+        );
+
+      case "videoToGif":
+        return (
+          <div className="productivity-single-grid">
+            <VideoToGif t={t} onMessage={(msg, type) => onToast?.(msg, type || "info")} />
+          </div>
+        );
+
+      case "portScanner":
+        return (
+          <div className="productivity-single-grid">
+            <PortScanner t={t} onMessage={(msg, type) => onToast?.(msg, type || "info")} />
+          </div>
+        );
+
+      default:
+        return null;
+    }
+  };
+
   return (
     <section className="single-panel productivity-shell refined-productivity-shell">
       <section className="productivity-header card refined-panel">
@@ -308,104 +614,19 @@ export default function ProductivityHub({ active, t, onToast }) {
         </div>
       </section>
 
-      <div className="refined-productivity-grid">
-        <section className="card refined-panel productivity-block">
-          <div className="block-head">
-            <div>
-              <div className="section-title">{t("screenUsage")}</div>
-              <div className="section-copy">{t("screenUsagePanelDesc")}</div>
-            </div>
-            <button className="btn btn-sm ghost" onClick={loadOverview} disabled={loading}>{loading ? t("scanRunning") : t("refresh")}</button>
-          </div>
-          <div className="summary-grid">
-            <SummaryCard label={t("todayTopApps")} value={safeLabel(todayItems[0]?.label, "--")} meta={todayItems[0] ? `${formatDuration(todayItems[0].durationMs)} · ${percent(todayItems[0].durationMs, todayTotalMs)}` : t("screenUsageEmpty")} />
-            <SummaryCard label={t("weekTopApps")} value={safeLabel(weekItems[0]?.label, "--")} meta={weekItems[0] ? `${formatDuration(weekItems[0].durationMs)} · ${percent(weekItems[0].durationMs, weekTotalMs)}` : t("screenUsageEmpty")} />
-          </div>
-          <div className="standard-list-card">
-            <div className="field-label">{t("todayTopApps")}</div>
-            <div className="standard-list">
-              {todayItems.length ? todayItems.slice(0, 6).map((item) => <UsageRow key={item.id} item={item} totalMs={todayTotalMs} />) : <div className="empty slim-empty">{t("screenUsageEmpty")}</div>}
-            </div>
-          </div>
-        </section>
-
-        <section className="card refined-panel productivity-block">
-          <div className="block-head">
-            <div>
-              <div className="section-title">{t("duplicateCleaner")}</div>
-              <div className="section-copy">{t("duplicateCleanerDesc")}</div>
-            </div>
-            <button className="btn btn-sm teal" onClick={runDuplicateScan} disabled={busy.duplicates}>{busy.duplicates ? t("scanRunning") : t("scanDuplicates")}</button>
-          </div>
-          <div className="field-stack">
-            <label className="field-shell">
-              <span className="field-label">{t("scanFolders")}</span>
-              <textarea className="field-input field-textarea" rows="4" value={duplicateRootsText} onChange={(event) => setDuplicateRootsText(event.target.value)} />
-            </label>
-            <div className="inline-field-row">
-              <button className="btn btn-sm ghost" onClick={() => appendFolder(setDuplicateRootsText, duplicateRootsText)}>{t("browseFolder")}</button>
-              <select className="field-input select-input" value={duplicateStrategy} onChange={(event) => setDuplicateStrategy(event.target.value)}>
-                <option value="hash">{t("duplicateStrategyHash")}</option>
-                <option value="name">{t("duplicateStrategyName")}</option>
-                <option value="size">{t("duplicateStrategySize")}</option>
-              </select>
-            </div>
-          </div>
-          <ScanActivity busy={busy.duplicates} progress={duplicateProgress} phase={DUPLICATE_SCAN_PHASES[duplicatePhaseIndex]} phases={DUPLICATE_SCAN_PHASES} t={t} />
-          <div className="summary-grid three-col">
-            <SummaryCard label={t("duplicateGroups")} value={String(duplicateResult?.summary?.groupCount || 0)} meta={t("scanFolders")} />
-            <SummaryCard label={t("reclaimableSpace")} value={formatBytes(duplicateResult?.summary?.wastedBytes || 0)} meta={t("duplicateWasteHint")} />
-            <SummaryCard label={t("scannedFiles")} value={String(duplicateResult?.scannedFileCount || 0)} meta={t("lastUpdatedAt")} />
-          </div>
-          <div className="standard-list-card">
-            <div className="field-label">{t("duplicateGroups")}</div>
-            <div className="standard-list">
-              {duplicatePriority.length ? duplicatePriority.map((group) => <DuplicateRow key={group.id} group={group} t={t} onDelete={deleteDuplicateGroup} />) : <div className="empty slim-empty">{t("duplicatesEmpty")}</div>}
-            </div>
-          </div>
-        </section>
-
-        <section className="card refined-panel productivity-block wide-block">
-          <div className="block-head">
-            <div>
-              <div className="section-title">{t("fileExpiryAssistant")}</div>
-              <div className="section-copy">{t("fileExpiryDesc")}</div>
-            </div>
-            <button className="btn btn-sm teal" onClick={runStaleScan} disabled={busy.stale}>{busy.stale ? t("scanRunning") : t("scanStaleFiles")}</button>
-          </div>
-          <div className="stale-form-grid">
-            <label className="field-shell field-span-2">
-              <span className="field-label">{t("monitorFolders")}</span>
-              <textarea className="field-input field-textarea" rows="4" value={staleRootsText} onChange={(event) => setStaleRootsText(event.target.value)} />
-            </label>
-            <label className="field-shell">
-              <span className="field-label">{t("staleDays")}</span>
-              <input className="field-input" type="number" min="1" value={staleDays} onChange={(event) => setStaleDays(event.target.value)} />
-            </label>
-            <label className="field-shell">
-              <span className="field-label">{t("archiveFolder")}</span>
-              <input className="field-input" value={archiveDir} onChange={(event) => setArchiveDir(event.target.value)} />
-            </label>
-          </div>
-          <div className="inline-field-row">
-            <button className="btn btn-sm ghost" onClick={() => appendFolder(setStaleRootsText, staleRootsText)}>{t("browseFolder")}</button>
-            <button className="btn btn-sm ghost" onClick={saveFileExpirySettings}>{t("saveSettings")}</button>
-          </div>
-          <ScanActivity busy={busy.stale} progress={staleProgress} phase={STALE_SCAN_PHASES[stalePhaseIndex]} phases={STALE_SCAN_PHASES} t={t} />
-          <div className="summary-grid four-col">
-            <SummaryCard label={t("staleFileCount")} value={String(staleResult?.summary?.staleFileCount || 0)} meta={t("staleFilesHint")} />
-            <SummaryCard label={t("reclaimableSpace")} value={formatBytes(staleResult?.summary?.reclaimableBytes || 0)} meta={t("fileExpiryAssistant")} />
-            <SummaryCard label={t("staleDays")} value={String(staleDays)} meta={t("monitorFolders")} />
-            <SummaryCard label={t("lastScanAt")} value={formatDate(overview?.fileExpiry?.lastScanAt)} meta={t("lastUpdatedAt")} />
-          </div>
-          <div className="standard-list-card">
-            <div className="field-label">{t("staleQueueTitle")}</div>
-            <div className="standard-list">
-              {stalePriority.length ? stalePriority.map((item) => <StaleRow key={item.path} item={item} t={t} onArchive={archiveStaleItem} onDelete={deleteStaleItem} />) : <div className="empty slim-empty">{t("staleFilesEmpty")}</div>}
-            </div>
-          </div>
-        </section>
+      <div className="tab-navigation">
+        {TABS.map((tab) => (
+          <button
+            key={tab.id}
+            className={`tab-button ${activeTab === tab.id ? "active" : ""}`}
+            onClick={() => setActiveTab(tab.id)}
+          >
+            {tab.label}
+          </button>
+        ))}
       </div>
+
+      {renderTabContent()}
     </section>
   );
 }

@@ -3,8 +3,41 @@ const path = require("node:path");
 const crypto = require("node:crypto");
 const util = require("node:util");
 const { execFile } = require("node:child_process");
+const net = require("node:net");
 
 const execFileAsync = util.promisify(execFile);
+
+// 视频转 GIF 配置
+const VIDEO_TO_GIF_DEFAULTS = {
+  fps: 10,
+  width: 480,
+  quality: 5,
+  startTime: 0,
+  duration: null
+};
+
+async function convertVideoToGif(inputPath, outputPath, options = {}) {
+  const opts = { ...VIDEO_TO_GIF_DEFAULTS, ...options };
+  const { fps, width, quality, startTime, duration } = opts;
+
+  return new Promise((resolve, reject) => {
+    let command = ffmpeg(inputPath)
+      .setStartTime(Number(startTime))
+      .fps(Number(fps))
+      .size(`${Number(width)}x?`)
+      .outputOptions([`-loop`, `0`, `-q:v`, `${quality}`]);
+
+    if (duration) {
+      command = command.setDuration(Number(duration));
+    }
+
+    command
+      .output(outputPath)
+      .on('end', () => resolve({ success: true, outputPath }))
+      .on('error', (err) => reject(err))
+      .run();
+  });
+}
 
 const ACTIVE_WINDOW_POLL_MS = 15000;
 const STALE_REMINDER_POLL_MS = 30 * 60 * 1000;
@@ -445,6 +478,355 @@ function getOverviewFromState(state, platform) {
   };
 }
 
+const ffmpeg = require('fluent-ffmpeg');
+
+// 端口扫描配置
+const PORT_SCAN_DEFAULTS = {
+  timeout: 1000,
+  concurrentLimit: 50
+};
+
+// 常见端口及其服务描述
+const COMMON_PORTS = {
+  20: "FTP Data",
+  21: "FTP Control",
+  22: "SSH",
+  23: "Telnet",
+  25: "SMTP",
+  53: "DNS",
+  80: "HTTP",
+  110: "POP3",
+  143: "IMAP",
+  443: "HTTPS",
+  3306: "MySQL",
+  3389: "RDP",
+  5432: "PostgreSQL",
+  6379: "Redis",
+  8080: "HTTP Alt",
+  8443: "HTTPS Alt",
+  9200: "Elasticsearch",
+  27017: "MongoDB"
+};
+
+// 扫描单个端口
+async function scanPort(host, port, timeout = 1000) {
+  return new Promise((resolve) => {
+    const socket = new net.Socket();
+    const timer = setTimeout(() => {
+      socket.destroy();
+      resolve({ port, open: false, service: COMMON_PORTS[port] || "" });
+    }, timeout);
+
+    socket.setTimeout(timeout);
+    socket.once("connect", () => {
+      clearTimeout(timer);
+      socket.destroy();
+      resolve({ port, open: true, service: COMMON_PORTS[port] || "" });
+    });
+    socket.once("error", () => {
+      clearTimeout(timer);
+      socket.destroy();
+      resolve({ port, open: false, service: COMMON_PORTS[port] || "" });
+    });
+    socket.once("timeout", () => {
+      clearTimeout(timer);
+      socket.destroy();
+      resolve({ port, open: false, service: COMMON_PORTS[port] || "" });
+    });
+    socket.connect(port, host);
+  });
+}
+
+// 解析端口范围
+function parsePortRange(range) {
+  const ports = new Set();
+  const parts = String(range || "").split(",").map((p) => p.trim()).filter(Boolean);
+
+  for (const part of parts) {
+    if (part.includes("-")) {
+      const [start, end] = part.split("-").map((p) => parseInt(p.trim(), 10));
+      if (start && end && start <= end && start > 0 && end <= 65535) {
+        for (let i = start; i <= end; i++) {
+          ports.add(i);
+        }
+      }
+    } else {
+      const port = parseInt(part, 10);
+      if (port > 0 && port <= 65535) {
+        ports.add(port);
+      }
+    }
+  }
+
+  return [...ports].sort((a, b) => a - b);
+}
+
+// 批量扫描端口
+async function scanPortsBatch(host, ports, concurrentLimit = 50, timeout = 1000, onProgress = null) {
+  const results = [];
+  const total = ports.length;
+  let completed = 0;
+
+  // 分批处理
+  for (let i = 0; i < ports.length; i += concurrentLimit) {
+    const batch = ports.slice(i, i + concurrentLimit);
+    const batchPromises = batch.map((port) => scanPort(host, port, timeout));
+    const batchResults = await Promise.all(batchPromises);
+
+    results.push(...batchResults);
+    completed += batch.length;
+
+    if (onProgress) {
+      onProgress({ completed, total, percentage: Math.round((completed / total) * 100) });
+    }
+  }
+
+  return results;
+}
+
+// 获取系统端口占用信息（Windows）
+async function getSystemPortUsage() {
+  const platform = process.platform;
+  const portUsage = [];
+
+  try {
+    if (platform === "win32") {
+      const { stdout } = await execFileAsync("cmd.exe", ["/d", "/c", "netstat -ano"], {
+        encoding: "utf8",
+        windowsHide: true,
+        timeout: 30000
+      });
+
+      const lines = String(stdout || "").split(/\r?\n/).map((line) => line.trim()).filter(Boolean);
+      for (const line of lines) {
+        const match = line.match(/^(\w+)\s+(\S+):(\d+)\s+(\S+)\s+(\w+)\s+(\d+)$/);
+        if (match) {
+          const [, protocol, localAddr, port, foreignAddr, state, pid] = match;
+          portUsage.push({
+            protocol: protocol.toLowerCase(),
+            localAddress: `${localAddr}:${port}`,
+            port: parseInt(port, 10),
+            foreignAddress: foreignAddr,
+            state: state,
+            pid: parseInt(pid, 10) || null
+          });
+        }
+      }
+    } else if (platform === "darwin" || platform === "linux") {
+      const { stdout } = await execFileAsync("netstat", ["-tunap"], {
+        encoding: "utf8",
+        timeout: 30000
+      });
+
+      const lines = String(stdout || "").split(/\r?\n/).map((line) => line.trim()).filter(Boolean);
+      for (const line of lines) {
+        const parts = line.split(/\s+/);
+        if (parts.length >= 6) {
+          const protocol = parts[0].toLowerCase();
+          const localAddr = parts[3];
+          const state = parts[5];
+          const pidMatch = parts[parts.length - 1]?.match(/(\d+)/);
+          const pid = pidMatch ? parseInt(pidMatch[1], 10) : null;
+          const portMatch = localAddr.match(/:(\d+)$/);
+          const port = portMatch ? parseInt(portMatch[1], 10) : null;
+
+          if (port) {
+            portUsage.push({
+              protocol,
+              localAddress: localAddr,
+              port,
+              foreignAddress: parts[4],
+              state,
+              pid
+            });
+          }
+        }
+      }
+    }
+  } catch (error) {
+    console.warn("Failed to get system port usage:", error.message);
+  }
+
+  return portUsage;
+}
+
+// 获取进程名称（Windows）
+async function getProcessNameByPid(pid) {
+  if (!pid) return null;
+
+  try {
+    if (process.platform === "win32") {
+      const { stdout } = await execFileAsync("tasklist", ["/fi", `pid eq ${pid}`, "/fo", "csv", "/nh"], {
+        encoding: "utf8",
+        windowsHide: true,
+        timeout: 10000
+      });
+      const line = String(stdout || "").trim();
+      if (line) {
+        const match = line.match(/^"([^"]+)"/);
+        if (match) return match[1];
+      }
+    } else {
+      const { stdout } = await execFileAsync("ps", ["-p", String(pid), "-o", "comm="], {
+        encoding: "utf8",
+        timeout: 10000
+      });
+      return String(stdout || "").trim() || null;
+    }
+  } catch {
+    // 忽略错误
+  }
+  return null;
+}
+
+// 根据 PID 结束进程（释放端口）
+async function terminateProcessByPid(pid) {
+  if (!pid) {
+    throw new Error("Invalid PID");
+  }
+
+  const numericPid = Number(pid);
+  if (!numericPid || Number.isNaN(numericPid)) {
+    throw new Error("Invalid PID");
+  }
+
+  try {
+    if (process.platform === "win32") {
+      await execFileAsync("taskkill", ["/PID", String(pid), "/T", "/F"], {
+        windowsHide: true
+      });
+    } else {
+      process.kill(-numericPid, "SIGTERM");
+    }
+    return { success: true, pid };
+  } catch (error) {
+    throw new Error(`Failed to terminate process: ${error.message}`);
+  }
+}
+
+// 根据端口查找并结束进程
+async function releasePort(port) {
+  const numericPort = Number(port);
+  if (!numericPort || numericPort < 1 || numericPort > 65535) {
+    throw new Error("Invalid port number");
+  }
+
+  try {
+    // 获取占用该端口的进程
+    let targetPid = null;
+
+    if (process.platform === "win32") {
+      const { stdout } = await execFileAsync("cmd.exe", ["/d", "/c", `netstat -ano | findstr :${numericPort}`], {
+        encoding: "utf8",
+        windowsHide: true
+      });
+
+      const lines = String(stdout || "").split(/\r?\n/).map((line) => line.trim()).filter(Boolean);
+      for (const line of lines) {
+        // 匹配 LISTENING 状态的端口，Windows netstat 格式: TCP 0.0.0.0:8080 0.0.0.0:0 LISTENING 1234
+        const match = line.match(/LISTENING\s+(\d+)/i);
+        if (match) {
+          targetPid = Number(match[1]);
+          break;
+        }
+      }
+    } else {
+      const { stdout } = await execFileAsync("lsof", ["-i", `:${numericPort}`, "-t"], {
+        encoding: "utf8"
+      });
+      const pid = String(stdout || "").trim();
+      if (pid) {
+        targetPid = Number(pid);
+      }
+    }
+
+    if (!targetPid) {
+      return { success: false, message: "No process found using this port", port: numericPort };
+    }
+
+    // 获取进程名称
+    const processName = await getProcessNameByPid(targetPid);
+
+    // 结束进程
+    await terminateProcessByPid(targetPid);
+
+    return {
+      success: true,
+      port: numericPort,
+      pid: targetPid,
+      processName
+    };
+  } catch (error) {
+    throw new Error(`Failed to release port ${port}: ${error.message}`);
+  }
+}
+
+// 执行完整端口扫描
+async function performPortScan(options = {}) {
+  const {
+    host = "127.0.0.1",
+    portRange = "1-1000",
+    scanType = "tcp",
+    timeout = 1000,
+    concurrentLimit = 50,
+    includeSystemInfo = true
+  } = options;
+
+  const ports = parsePortRange(portRange);
+  if (ports.length === 0) {
+    throw new Error("Invalid port range");
+  }
+
+  const startTime = Date.now();
+  const results = await scanPortsBatch(host, ports, concurrentLimit, timeout);
+  const duration = Date.now() - startTime;
+
+  const openPorts = results.filter((r) => r.open);
+  const closedPorts = results.filter((r) => !r.open);
+
+  // 获取系统端口占用信息
+  let systemPortUsage = [];
+  if (includeSystemInfo) {
+    systemPortUsage = await getSystemPortUsage();
+  }
+
+  // 合并扫描结果和系统信息
+  const enhancedResults = results.map((result) => {
+    const systemInfo = systemPortUsage.find((s) => s.port === result.port);
+    return {
+      ...result,
+      systemState: systemInfo?.state || null,
+      pid: systemInfo?.pid || null
+    };
+  });
+
+  // 获取进程名称
+  const uniquePids = [...new Set(enhancedResults.filter((r) => r.pid).map((r) => r.pid))];
+  const processNames = new Map();
+  for (const pid of uniquePids.slice(0, 20)) {
+    const name = await getProcessNameByPid(pid);
+    if (name) processNames.set(pid, name);
+  }
+
+  const finalResults = enhancedResults.map((r) => ({
+    ...r,
+    processName: r.pid ? processNames.get(r.pid) || "Unknown" : null
+  }));
+
+  return {
+    host,
+    portRange,
+    scanType,
+    totalPorts: ports.length,
+    openCount: openPorts.length,
+    closedCount: closedPorts.length,
+    duration,
+    results: finalResults,
+    openPorts: finalResults.filter((r) => r.open),
+    timestamp: nowIso()
+  };
+}
+
 function createProductivityTools({ app, store, Notification, logEvent }) {
   let activeWindowTimer = null;
   let staleReminderTimer = null;
@@ -603,6 +985,42 @@ function createProductivityTools({ app, store, Notification, logEvent }) {
       }
       state.fileExpiry.lastScanAt = nowIso();
       saveState(state);
+      return result;
+    },
+    async convertVideoToGif(payload) {
+      const { inputPath, outputPath, fps, width, startTime, duration, quality } = payload;
+      const result = await convertVideoToGif(inputPath, outputPath, {
+        fps: Number(fps || 10),
+        width: Number(width || 480),
+        startTime: Number(startTime || 0),
+        duration: duration ? Number(duration) : null,
+        quality: Number(quality || 5)
+      });
+      return result;
+    },
+    async scanPorts(payload) {
+      const result = await performPortScan(payload || {});
+      logEvent?.({
+        category: "productivity",
+        level: "info",
+        title: "Port scan completed",
+        summary: `Scanned ${result.totalPorts} ports on ${result.host}, found ${result.openCount} open ports.`,
+        details: { host: result.host, portRange: result.portRange, openCount: result.openCount, duration: result.duration }
+      });
+      return result;
+    },
+    async releasePort(payload) {
+      const { port } = payload || {};
+      const result = await releasePort(port);
+      logEvent?.({
+        category: "productivity",
+        level: result.success ? "success" : "warning",
+        title: result.success ? "Port released" : "Port release failed",
+        summary: result.success
+          ? `Released port ${result.port} by terminating process ${result.processName} (PID: ${result.pid})`
+          : result.message,
+        details: result
+      });
       return result;
     }
   };

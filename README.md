@@ -30,7 +30,11 @@
 
 > 说明：以下图片/视频路径为项目内约定位置。你可以直接替换同名文件，README 会自动显示最新效果。
 
-### 截图
+### 教程示例
+
+![productivity-scans.mp4](docs/media/videos/productivity-scans.gif)
+
+### 使用场景
 
 | 场景 | 预览 |
 | --- | --- |
@@ -39,13 +43,7 @@
 | 效率工具中心 | ![效率工具中心](docs/media/screenshots/productivity-hub.png) |
 | 系统配置管理 | ![系统配置中心](docs/media/screenshots/system-config.png) |
 
-### 录屏
 
-| 演示内容 | 文件 |
-| --- | --- |
-<!-- | 命令创建、启动、停止、日志查看 | [command-flow.mp4](docs/media/videos/command-flow.mp4) | -->
-<!-- | 手势控制模式（含摄像头预览） | [gesture-mode.mp4](docs/media/videos/gesture-mode.mp4) | -->
-| 效率工具扫描流程 | [productivity-scans.mp4](docs/media/videos/productivity-scans.mp4) |
 
 
 ## 产品概览
