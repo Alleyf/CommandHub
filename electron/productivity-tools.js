@@ -692,14 +692,23 @@ async function terminateProcessByPid(pid) {
 
   try {
     if (process.platform === "win32") {
-      await execFileAsync("taskkill", ["/PID", String(pid), "/T", "/F"], {
-        windowsHide: true
+      const { stderr } = await execFileAsync("taskkill", ["/PID", String(pid), "/T", "/F"], {
+        encoding: "utf8",
+        windowsHide: true,
+        timeout: 10000
       });
+      // taskkill 成功时 stderr 可能为空或包含 "SUCCESS"
+      return { success: true, pid };
     } else {
       process.kill(-numericPid, "SIGTERM");
+      return { success: true, pid };
     }
-    return { success: true, pid };
   } catch (error) {
+    // 检查是否是权限问题
+    const errorMsg = error.message || "";
+    if (errorMsg.includes("Access is denied") || errorMsg.includes("拒绝访问") || errorMsg.includes("EPERM")) {
+      throw new Error("Permission denied. Please run the application as administrator to terminate this process.");
+    }
     throw new Error(`Failed to terminate process: ${error.message}`);
   }
 }
@@ -716,14 +725,22 @@ async function releasePort(port) {
     let targetPid = null;
 
     if (process.platform === "win32") {
-      const { stdout } = await execFileAsync("cmd.exe", ["/d", "/c", `netstat -ano | findstr :${numericPort}`], {
+      // 使用更精确的匹配方式：确保端口号后面跟着空格或冒号
+      const { stdout } = await execFileAsync("cmd.exe", ["/d", "/c", "netstat -ano"], {
         encoding: "utf8",
-        windowsHide: true
+        windowsHide: true,
+        timeout: 10000
       });
 
       const lines = String(stdout || "").split(/\r?\n/).map((line) => line.trim()).filter(Boolean);
       for (const line of lines) {
-        // 匹配 LISTENING 状态的端口，Windows netstat 格式: TCP 0.0.0.0:8080 0.0.0.0:0 LISTENING 1234
+        // Windows netstat 格式: TCP 0.0.0.0:8080 0.0.0.0:0 LISTENING 1234
+        // 或 IPv6: TCP [::]:8080 [::]:0 LISTENING 1234
+        // 需要精确匹配端口号，避免 8080 匹配到 18080
+        const portPattern = new RegExp(`:${numericPort}(\\s|:)`, "i");
+        if (!portPattern.test(line)) continue;
+
+        // 匹配 LISTENING 状态的端口
         const match = line.match(/LISTENING\s+(\d+)/i);
         if (match) {
           targetPid = Number(match[1]);
