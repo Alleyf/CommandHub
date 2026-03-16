@@ -48,5 +48,15 @@ contextBridge.exposeInMainWorld("commandHub", {
     const handler = () => callback();
     ipcRenderer.on("runtime-updated", handler);
     return () => ipcRenderer.removeListener("runtime-updated", handler);
+  },
+  onUpdateProgress: (callback) => {
+    const handler = (_event, progress) => callback(progress);
+    ipcRenderer.on("update:progress", handler);
+    return () => ipcRenderer.removeListener("update:progress", handler);
+  },
+  onUpdateDownloaded: (callback) => {
+    const handler = () => callback();
+    ipcRenderer.on("update:downloaded", handler);
+    return () => ipcRenderer.removeListener("update:downloaded", handler);
   }
 });

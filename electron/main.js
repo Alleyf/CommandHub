@@ -1466,6 +1466,11 @@ safeHandle("app:export-global-logs", async (_event, options) => {
 });
 safeHandle("app:check-for-updates", async () => {
   try {
+    // 在开发模式下也需要设置 feed URL
+    if (isDev) {
+      autoUpdater.setFeedURL("https://github.com/Alleyf/CommandHub/releases/latest/download");
+    }
+
     const result = await autoUpdater.checkForUpdates();
     const info = result?.updateInfo || null;
     return {
@@ -1497,13 +1502,15 @@ safeHandle("app:scan-ports", async (_event, payload) => await productivityTools.
 safeHandle("app:release-port", async (_event, payload) => await productivityTools.releasePort(payload || {}));
 
 function setupAutoUpdater() {
-  if (isDev) {
-    console.log("[AutoUpdate] Skipped in dev");
-    return;
-  }
-
   // 设置 GitHub 更新源 - 使用完整 URL
   autoUpdater.setFeedURL("https://github.com/Alleyf/CommandHub/releases/latest/download");
+
+  // 允许在开发模式下检查更新
+  autoUpdater.forceDevUpdateConfig = true;
+
+  if (isDev) {
+    console.log("[AutoUpdate] Running in dev mode");
+  }
 
   // 不自动下载，等待用户确认
   autoUpdater.autoDownload = false;

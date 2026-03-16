@@ -198,6 +198,7 @@ function App() {
   const [groupSelectValue, setGroupSelectValue] = useState("");
   const [logDrawerWidth, setLogDrawerWidth] = useState(540);
   const [updateStatus, setUpdateStatus] = useState({ checking: false, message: "", type: "" });
+  const [updateProgress, setUpdateProgress] = useState(null);
   const [actionStatus, setActionStatus] = useState({ message: "", type: "" });
   const [globalLogs, setGlobalLogs] = useState([]);
   const [globalLogType, setGlobalLogType] = useState("");
@@ -295,9 +296,33 @@ function App() {
 
   useEffect(() => {
     refreshState();
-    const dispose = window.commandHub.onRuntimeUpdated(refreshState);
+    const disposeRuntime = window.commandHub.onRuntimeUpdated(refreshState);
+
+    // 监听更新事件
+    const unsubscribeProgress = window.commandHub.onUpdateProgress((progress) => {
+      setUpdateProgress(progress);
+      if (progress && progress.percent !== undefined) {
+        setUpdateStatus({
+          checking: false,
+          message: `正在下载更新... ${Math.round(progress.percent)}%`,
+          type: "info"
+        });
+      }
+    });
+
+    const unsubscribeDownloaded = window.commandHub.onUpdateDownloaded(() => {
+      setUpdateProgress(null);
+      setUpdateStatus({
+        checking: false,
+        message: "更新已下载完成",
+        type: "success"
+      });
+    });
+
     return () => {
-      dispose?.();
+      disposeRuntime?.();
+      unsubscribeProgress?.();
+      unsubscribeDownloaded?.();
     };
   }, []);
 
@@ -907,7 +932,7 @@ function App() {
       ]
     : [];
 
-  const navItems = [["commands", t("navCommands")], ["library", t("navLibrary")], ["productivity", t("navProductivity")], ["logs", t("navLogs")], ["settings", t("navSettings")]];
+  const navItems = [["commands", t("navCommands")], ["library", t("navLibrary")], ["productivity", t("navProductivity")], ["logs", t("navLogs")], ["settings", t("navSettings")], ["about", t("navAbout")]];
   const stateOptions = [["", t("allStates")], ["running", t("stateRunning")], ["stopped", t("stateStopped")], ["error", t("stateError")]];
   const stateSelectOptions = stateOptions.map(([value, label]) => ({ value, label }));
   const groupFilterOptions = [{ value: "", label: t("allGroups") }, ...groups.map((group) => ({ value: group, label: group || t("noGroup") }))];
@@ -1110,6 +1135,18 @@ function App() {
       </aside>
 
       <main className="main-stage">
+        {updateProgress && (
+          <div className="card status-banner">
+            <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
+              <div style={{ flex: 1 }}>
+                <div>{updateStatus.message}</div>
+                <div style={{ marginTop: '6px', height: '4px', background: 'rgba(255,255,255,0.1)', borderRadius: '2px', overflow: 'hidden' }}>
+                  <div style={{ height: '100%', width: `${updateProgress.percent}%`, background: '#52d6a2', transition: 'width 0.3s' }} />
+                </div>
+              </div>
+            </div>
+          </div>
+        )}
         {actionStatus.message && (
           <div className={`card status-banner ${actionStatus.type === "error" ? "status-banner-error" : ""}`}>
             {actionStatus.message}
@@ -1862,6 +1899,178 @@ function App() {
                   <button className="btn btn-md ghost" onClick={reopenOnboarding}>
                     {t("reopenOnboarding")}
                   </button>
+                </div>
+              </div>
+            </div>
+          </section>
+        )}
+
+        {activeView === "about" && (
+          <section className="single-panel">
+            <div className="card panel-card">
+              <div className="section-title">关于 CommandHub</div>
+
+              {/* 头部介绍 */}
+              <div style={{ marginTop: '24px', marginBottom: '32px' }}>
+                <div style={{ display: 'flex', alignItems: 'center', gap: '16px', marginBottom: '20px' }}>
+                  <svg width="64" height="64" viewBox="0 0 96 96" fill="none" xmlns="http://www.w3.org/2000/svg" style={{ borderRadius: '16px' }}>
+                    <rect x="8" y="8" width="80" height="80" rx="24" fill="#071118"/>
+                    <defs>
+                      <linearGradient id="hubShell2" x1="8%" y1="10%" x2="88%" y2="90%">
+                        <stop offset="0%" stop-color="#f4c95d"/>
+                        <stop offset="52%" stop-color="#66d9e8"/>
+                        <stop offset="100%" stop-color="#52d6a2"/>
+                      </linearGradient>
+                      <linearGradient id="hubBeam2" x1="0%" y1="0%" x2="100%" y2="100%">
+                        <stop offset="0%" stop-color="#fef1bf"/>
+                        <stop offset="100%" stop-color="#66d9e8"/>
+                      </linearGradient>
+                    </defs>
+                    <rect x="8" y="8" width="80" height="80" rx="24" stroke="url(#hubShell2)" stroke-width="3"/>
+                    <path d="M28 64V32L48 50L68 32V64" stroke="url(#hubShell2)" strokeWidth="8" strokeLinecap="round" strokeLinejoin="round"/>
+                    <circle cx="48" cy="48" r="8" fill="url(#hubBeam2)"/>
+                    <path d="M48 24V40M24 48H40M56 48H72M48 56V72" stroke="url(#hubBeam2)" strokeWidth="5" strokeLinecap="round"/>
+                  </svg>
+                  <div>
+                    <div style={{ fontWeight: 600, fontSize: '20px' }}>CommandHub</div>
+                    <div style={{ fontSize: '14px', opacity: 0.7 }}>版本 0.4.7</div>
+                  </div>
+                </div>
+
+                <p style={{ fontSize: '14px', lineHeight: 1.7, opacity: 0.85, marginBottom: '12px' }}>
+                  CommandHub 是一个跨平台桌面应用，用于管理和监控后台运行的 CLI 服务。让命令行工具在后台持续运行，提供可视化的进程监控、日志查看和快捷操作。
+                </p>
+              </div>
+
+              {/* 使用场景 */}
+              <div style={{ borderTop: '1px solid rgba(255,255,255,0.1)', paddingTop: '24px', marginTop: '16px' }}>
+                <div className="section-title" style={{ fontSize: '14px', marginBottom: '16px' }}>典型使用场景</div>
+
+                <div style={{ display: 'grid', gridTemplateColumns: 'repeat(2, 1fr)', gap: '12px' }}>
+                  <div style={{ padding: '16px', background: 'rgba(255,255,255,0.03)', borderRadius: '12px', border: '1px solid rgba(255,255,255,0.06)' }}>
+                    <div style={{ fontWeight: 600, fontSize: '14px', marginBottom: '8px', color: '#52d6a2' }}>开发服务器</div>
+                    <div style={{ fontSize: '12px', opacity: 0.7, lineHeight: 1.5 }}>
+                      Node.js、Python Django/Flask、Go 开发服务器等开发环境常驻运行
+                    </div>
+                  </div>
+
+                  <div style={{ padding: '16px', background: 'rgba(255,255,255,0.03)', borderRadius: '12px', border: '1px solid rgba(255,255,255,0.06)' }}>
+                    <div style={{ fontWeight: 600, fontSize: '14px', marginBottom: '8px', color: '#66d9e8' }}>内网穿透</div>
+                    <div style={{ fontSize: '12px', opacity: 0.7, lineHeight: 1.5 }}>
+                      frp、localtunnel、ngrok 等内网穿透工具持续运行
+                    </div>
+                  </div>
+
+                  <div style={{ padding: '16px', background: 'rgba(255,255,255,0.03)', borderRadius: '12px', border: '1px solid rgba(255,255,255,0.06)' }}>
+                    <div style={{ fontWeight: 600, fontSize: '14px', marginBottom: '8px', color: '#f4c95d' }}>数据库服务</div>
+                    <div style={{ fontSize: '12px', opacity: 0.7, lineHeight: 1.5 }}>
+                      MySQL、MongoDB、Redis 等本地数据库服务管理
+                    </div>
+                  </div>
+
+                  <div style={{ padding: '16px', background: 'rgba(255,255,255,0.03)', borderRadius: '12px', border: '1px solid rgba(255,255,255,0.06)' }}>
+                    <div style={{ fontWeight: 600, fontSize: '14px', marginBottom: '8px', color: '#f57d7d' }}>自动化工具</div>
+                    <div style={{ fontSize: '12px', opacity: 0.7, lineHeight: 1.5 }}>
+                      定时任务脚本、文件同步、备份工具等常驻运行
+                    </div>
+                  </div>
+
+                  <div style={{ padding: '16px', background: 'rgba(255,255,255,0.03)', borderRadius: '12px', border: '1px solid rgba(255,255,255,0.06)' }}>
+                    <div style={{ fontWeight: 600, fontSize: '14px', marginBottom: '8px', color: '#a78bfa' }}>测试工具</div>
+                    <div style={{ fontSize: '12px', opacity: 0.7, lineHeight: 1.5 }}>
+                      JMeter、Locust 等压测工具后台运行
+                    </div>
+                  </div>
+
+                  <div style={{ padding: '16px', background: 'rgba(255,255,255,0.03)', borderRadius: '12px', border: '1px solid rgba(255,255,255,0.06)' }}>
+                    <div style={{ fontWeight: 600, fontSize: '14px', marginBottom: '8px', color: '#34d399' }}>代理服务</div>
+                    <div style={{ fontSize: '12px', opacity: 0.7, lineHeight: 1.5 }}>
+                      V2Ray、Clash、Surge 等代理工具稳定运行
+                    </div>
+                  </div>
+                </div>
+              </div>
+
+              {/* 核心功能 */}
+              <div style={{ borderTop: '1px solid rgba(255,255,255,0.1)', paddingTop: '24px', marginTop: '24px' }}>
+                <div className="section-title" style={{ fontSize: '14px', marginBottom: '16px' }}>核心功能</div>
+
+                <div style={{ display: 'flex', flexDirection: 'column', gap: '12px' }}>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
+                    <div style={{ width: '8px', height: '8px', borderRadius: '50%', background: '#52d6a2' }} />
+                    <span style={{ fontSize: '13px', opacity: 0.85 }}>一键启动/停止/重启服务</span>
+                  </div>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
+                    <div style={{ width: '8px', height: '8px', borderRadius: '50%', background: '#66d9e8' }} />
+                    <span style={{ fontSize: '13px', opacity: 0.85 }}>实时日志监控和搜索</span>
+                  </div>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
+                    <div style={{ width: '8px', height: '8px', borderRadius: '50%', background: '#f4c95d' }} />
+                    <span style={{ fontSize: '13px', opacity: 0.85 }}>进程状态自动检测和告警</span>
+                  </div>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
+                    <div style={{ width: '8px', height: '8px', borderRadius: '50%', background: '#f57d7d' }} />
+                    <span style={{ fontSize: '13px', opacity: 0.85 }}>开机自启动和托盘常驻</span>
+                  </div>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
+                    <div style={{ width: '8px', height: '8px', borderRadius: '50%', background: '#a78bfa' }} />
+                    <span style={{ fontSize: '13px', opacity: 0.85 }}>命令模板快速复用</span>
+                  </div>
+                </div>
+              </div>
+
+              {/* 相关链接 */}
+              <div style={{ borderTop: '1px solid rgba(255,255,255,0.1)', paddingTop: '24px', marginTop: '24px' }}>
+                <div className="section-title" style={{ fontSize: '14px', marginBottom: '16px' }}>相关链接</div>
+
+                <div style={{ display: 'flex', flexDirection: 'column', gap: '12px' }}>
+                  <a
+                    href="https://github.com/Alleyf/CommandHub"
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    className="btn btn-md ghost"
+                    style={{ justifyContent: 'flex-start', gap: '12px' }}
+                  >
+                    <svg width="18" height="18" viewBox="0 0 24 24" fill="currentColor">
+                      <path d="M12 0c-6.626 0-12 5.373-12 12 0 5.302 3.438 9.8 8.207 11.387.599.111.793-.261.793-.577v-2.234c-3.338.726-4.033-1.416-4.033-1.416-.546-1.387-1.333-1.756-1.333-1.756-1.089-.745.083-.729.083-.729 1.205.084 1.839 1.237 1.839 1.237 1.07 1.834 2.807 1.304 3.492.997.107-.775.418-1.305.762-1.604-2.665-.305-5.467-1.334-5.467-5.931 0-1.311.469-2.381 1.236-3.221-.124-.303-.535-1.524.117-3.176 0 0 1.008-.322 3.301 1.23.957-.266 1.983-.399 3.003-.404 1.02.005 2.047.138 3.006.404 2.291-1.552 3.297-1.23 3.297-1.23.653 1.653.242 2.874.118 3.176.77.84 1.235 1.911 1.235 3.221 0 4.609-2.807 5.624-5.479 5.921.43.372.823 1.102.823 2.222v3.293c0 .319.192.694.801.576 4.765-1.589 8.199-6.086 8.199-11.386 0-6.627-5.373-12-12-12z"/>
+                    </svg>
+                    <div style={{ textAlign: 'left' }}>
+                      <div style={{ fontWeight: 500 }}>GitHub 仓库</div>
+                      <div style={{ fontSize: '12px', opacity: 0.6 }}>查看源码、文档和更新日志</div>
+                    </div>
+                  </a>
+
+                  <a
+                    href="https://github.com/Alleyf/CommandHub/issues"
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    className="btn btn-md ghost"
+                    style={{ justifyContent: 'flex-start', gap: '12px' }}
+                  >
+                    <svg width="18" height="18" viewBox="0 0 24 24" fill="currentColor">
+                      <path d="M12 0C5.37 0 0 5.37 0 12c0 5.31 3.435 9.795 8.205 11.385.6.105.825-.255.825-.57v-2.234c-3.338.735-4.037-1.416-4.037-1.416-.546-1.387-1.333-1.756-1.333-1.756-1.089-.745.083-.729.083-.729 1.205.084 1.839 1.237 1.839 1.237 1.07 1.834 2.807 1.304 3.492.997.107-.775.418-1.305.762-1.604-2.665-.305-5.467-1.334-5.467-5.931 0-1.311.469-2.381 1.236-3.221-.124-.303-.535-1.524.117-3.176 0 0 1.008-.322 3.301 1.23.957-.266 1.983-.399 3.003-.404 1.02.005 2.047.138 3.006.404 2.291-1.552 3.297-1.23 3.297-1.23.653 1.653.242 2.874.118 3.176.77.84 1.235 1.911 1.235 3.221 0 4.609-2.807 5.624-5.479 5.921.43.372.823 1.102.823 2.222v3.293c0 .319.192.694.801.576C20.565 21.795 24 17.31 24 12c0-6.63-5.37-12-12-12z"/>
+                    </svg>
+                    <div style={{ textAlign: 'left' }}>
+                      <div style={{ fontWeight: 500 }}>问题反馈</div>
+                      <div style={{ fontSize: '12px', opacity: 0.6 }}>报告 Bug 或提交功能建议</div>
+                    </div>
+                  </a>
+
+                  <a
+                    href="https://github.com/Alleyf"
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    className="btn btn-md ghost"
+                    style={{ justifyContent: 'flex-start', gap: '12px' }}
+                  >
+                    <svg width="18" height="18" viewBox="0 0 24 24" fill="currentColor">
+                      <path d="M12 0C5.37 0 0 5.37 0 12c0 5.31 3.435 9.795 8.205 11.385.6.105.825-.255.825-.57v-2.234c-3.338.735-4.037-1.416-4.037-1.416-.546-1.387-1.333-1.756-1.333-1.756-1.089-.745.083-.729.083-.729 1.205.084 1.839 1.237 1.839 1.237 1.07 1.834 2.807 1.304 3.492.997.107-.775.418-1.305.762-1.604-2.665-.305-5.467-1.334-5.467-5.931 0-1.311.469-2.381 1.236-3.221-.124-.303-.535-1.524.117-3.176 0 0 1.008-.322 3.301 1.23.957-.266 1.983-.399 3.003-.404 1.02.005 2.047.138 3.006.404 2.291-1.552 3.297-1.23 3.297-1.23.653 1.653.242 2.874.118 3.176.77.84 1.235 1.911 1.235 3.221 0 4.609-2.807 5.624-5.479 5.921.43.372.823 1.102.823 2.222v3.293c0 .319.192.694.801.576C20.565 21.795 24 17.31 24 12c0-6.63-5.37-12-12-12z"/>
+                    </svg>
+                    <div style={{ textAlign: 'left' }}>
+                      <div style={{ fontWeight: 500 }}>作者 GitHub</div>
+                      <div style={{ fontSize: '12px', opacity: 0.6 }}>关注作者更多项目</div>
+                    </div>
+                  </a>
                 </div>
               </div>
             </div>
