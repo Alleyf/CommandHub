@@ -1502,6 +1502,9 @@ function setupAutoUpdater() {
     return;
   }
 
+  // 设置 GitHub 更新源 - 使用完整 URL
+  autoUpdater.setFeedURL("https://github.com/Alleyf/CommandHub/releases/latest/download");
+
   // 不自动下载，等待用户确认
   autoUpdater.autoDownload = false;
   autoUpdater.autoInstallOnAppQuit = true;

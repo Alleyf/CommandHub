@@ -3,6 +3,10 @@
   "version": "0.4.6",
   "private": true,
   "description": "Cross-platform desktop manager for background CLI services.",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/Alleyf/CommandHub.git"
+  },
   "main": "electron/main.js",
   "scripts": {
     "brand:generate": "node scripts/generate-brand-assets.mjs",
@@ -19,7 +23,9 @@
     "appId": "com.commandhub.app",
     "productName": "CommandHub",
     "publish": {
-      "provider": "github"
+      "provider": "github",
+      "owner": "Alleyf",
+      "repo": "CommandHub"
     },
     "compression": "maximum",
     "afterPack": "scripts/after-pack.shim.js",
