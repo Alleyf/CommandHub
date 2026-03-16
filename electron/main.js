@@ -1622,7 +1622,6 @@ app.whenReady().then(async () => {
   // 设置权限检查
   session.defaultSession.setPermissionCheckHandler(() => true);
 
-  setupAutoUpdater();
   hydrateRuntime();
   saveSettings(loadSettings());
   ensureTray();
@@ -1630,6 +1629,10 @@ app.whenReady().then(async () => {
   productivityTools.start();
   refreshMatchedProcessCache(true).catch(() => {});
   await createWindow();
+
+  // 窗口创建后再设置更新检查，避免阻塞启动
+  setupAutoUpdater();
+
   nativeTheme.on("updated", () => updateRenderer());
 
   app.on("activate", async () => {

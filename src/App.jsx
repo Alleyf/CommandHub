@@ -2498,17 +2498,14 @@ function App() {
                       onDrop={(e) => {
                         e.preventDefault();
                         if (draggedAiTool && draggedAiTool !== tool.id) {
-                          // Reorder logic - move dragged item to target position
-                          const newOrder = [...allAiTools];
-                          const dragIndex = newOrder.findIndex(t => t.id === draggedAiTool);
-                          const dropIndex = newOrder.findIndex(t => t.id === tool.id);
+                          // Reorder logic - save full order of all tools
+                          const newOrder = allAiTools.map(t => t.id);
+                          const dragIndex = newOrder.indexOf(draggedAiTool);
+                          const dropIndex = newOrder.indexOf(tool.id);
                           if (dragIndex !== -1 && dropIndex !== -1) {
-                            const [draggedItem] = newOrder.splice(dragIndex, 1);
-                            newOrder.splice(dropIndex, 0, draggedItem);
-                            // Save the new order - only for user tools
-                            const userToolIds = newOrder.filter(t => t.isUser).map(t => t.id);
-                            localStorage.setItem("commandhub-ai-tool-order", JSON.stringify(userToolIds));
-                            // Trigger re-render
+                            newOrder.splice(dragIndex, 1);
+                            newOrder.splice(dropIndex, 0, draggedAiTool);
+                            localStorage.setItem("commandhub-ai-tool-order", JSON.stringify(newOrder));
                             setAiToolOrderVersion(v => v + 1);
                             showActionStatus(t("orderSaved") || "排序已保存", "success");
                           }
@@ -2571,11 +2568,15 @@ function App() {
                         }} title={t("share") || "分享"}>
                           <Share2 size={14} />
                         </button>
-                        <button className="btn btn-sm ghost" onClick={() => {
-                          if (aiToolOpenMode === "external") {
-                            window.open(tool.url, "_blank", "width=1200,height=800,menubar=no,toolbar=no,location=no,status=no,scrollbars=yes");
-                          } else {
-                            window.commandHub.openExternal(tool.url);
+                        <button className="btn btn-sm ghost" onClick={async () => {
+                          try {
+                            if (aiToolOpenMode === "external") {
+                              window.open(tool.url, "_blank", "width=1200,height=800,menubar=no,toolbar=no,location=no,status=no,scrollbars=yes");
+                            } else {
+                              await window.commandHub.openExternal(tool.url);
+                            }
+                          } catch (err) {
+                            showActionStatus(t("openFailed") || "打开失败", "error");
                           }
                         }} title={t("visit") || "访问"}>
                           <ExternalLink size={14} />
