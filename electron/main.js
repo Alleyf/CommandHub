@@ -1384,6 +1384,11 @@ safeHandle("app:open-path", async (_event, targetPath) => {
     await shell.openPath(targetPath);
   }
 });
+safeHandle("app:open-external", async (_event, url) => {
+  if (url) {
+    await shell.openExternal(url);
+  }
+});
 safeHandle("app:export-commands", async () => {
   const result = await dialog.showSaveDialog(mainWindow, {
     title: "Export command list",

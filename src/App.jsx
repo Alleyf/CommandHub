@@ -338,6 +338,12 @@ function App() {
     const saved = localStorage.getItem("commandhub-ai-favorites");
     return saved ? JSON.parse(saved) : [];
   });
+  const [aiToolOpenMode, setAiToolOpenMode] = useState(() => {
+    const saved = localStorage.getItem("commandhub-ai-open-mode");
+    return saved || "external";
+  });
+  const [draggedAiTool, setDraggedAiTool] = useState(null);
+  const [aiToolOrderVersion, setAiToolOrderVersion] = useState(0);
   const [onboardingOpen, setOnboardingOpen] = useState(false);
   const [onboardingStep, setOnboardingStep] = useState(0);
   const [onboardingTargetRect, setOnboardingTargetRect] = useState(null);
@@ -542,17 +548,27 @@ function App() {
       );
     }
 
-    // 收藏优先排序
+    // 加载保存的排序
+    const savedOrder = JSON.parse(localStorage.getItem("commandhub-ai-tool-order") || "[]");
+
+    // 收藏优先排序 + 自定义排序
     filtered = [...filtered].sort((a, b) => {
       const aFav = aiToolFavorites.includes(a.id);
       const bFav = aiToolFavorites.includes(b.id);
+      // 收藏的排前面
       if (aFav && !bFav) return -1;
       if (!aFav && bFav) return 1;
+      // 同为收藏或同为非收藏时，按自定义顺序排序
+      const aOrder = savedOrder.indexOf(a.id);
+      const bOrder = savedOrder.indexOf(b.id);
+      if (aOrder !== -1 && bOrder !== -1) return aOrder - bOrder;
+      if (aOrder !== -1) return -1;
+      if (bOrder !== -1) return 1;
       return 0;
     });
 
     return filtered;
-  }, [aiTools, aiToolCategoryFilter, aiToolSearchQuery, language, aiToolFavorites]);
+  }, [aiTools, aiToolCategoryFilter, aiToolSearchQuery, language, aiToolFavorites, aiToolOrderVersion]);
 
   // 检测AI工具可用性
   async function checkAiToolAvailability(tool) {
@@ -2419,7 +2435,20 @@ function App() {
                   </div>
                 </div>
                 <div className="toolbar-buttons">
-                  <span className="toolbar-stat">{t("totalAiTools")}: {allAiTools.length}</span>
+                  <div className="toolbar-stats">
+                    <span className="toolbar-stat">{t("totalAiTools")}: {allAiTools.length}</span>
+                    <span className="toolbar-stat-divider">|</span>
+                    <span className="toolbar-stat">{t("favorites") || "收藏"}: {aiToolFavorites.length}</span>
+                    <span className="toolbar-stat-divider">|</span>
+                    <span className="toolbar-stat">{t("userTools") || "我的"}: {aiTools.length}</span>
+                  </div>
+                  <button className="btn btn-sm ghost" onClick={() => {
+                    const newMode = aiToolOpenMode === "external" ? "embedded" : "external";
+                    setAiToolOpenMode(newMode);
+                    localStorage.setItem("commandhub-ai-open-mode", newMode);
+                  }} title={aiToolOpenMode === "external" ? (t("openExternal") || "外部打开") : (t("openEmbedded") || "内嵌打开")}>
+                    {aiToolOpenMode === "external" ? <ExternalLink size={14} /> : <Globe size={14} />}
+                  </button>
                   <button className="btn btn-sm primary" onClick={openAddAiToolModal} title={t("addAiTool") || "添加AI工具"}>
                     <Plus size={14} />
                   </button>
@@ -2449,8 +2478,44 @@ function App() {
                 {allAiTools.map((tool) => {
                   const status = aiToolsStatus[tool.id];
                   const isChecking = aiToolsChecking && status === undefined;
+                  const isDragging = draggedAiTool === tool.id;
                   return (
-                    <div key={tool.id} className={`ai-tool-card ${status === true ? "available" : status === false ? "unavailable" : ""}`}>
+                    <div
+                      key={tool.id}
+                      className={`ai-tool-card ${status === true ? "available" : status === false ? "unavailable" : ""} ${isDragging ? "dragging" : ""}`}
+                      draggable
+                      onDragStart={(e) => {
+                        setDraggedAiTool(tool.id);
+                        e.dataTransfer.effectAllowed = "move";
+                      }}
+                      onDragEnd={() => {
+                        setDraggedAiTool(null);
+                      }}
+                      onDragOver={(e) => {
+                        e.preventDefault();
+                        e.dataTransfer.dropEffect = "move";
+                      }}
+                      onDrop={(e) => {
+                        e.preventDefault();
+                        if (draggedAiTool && draggedAiTool !== tool.id) {
+                          // Reorder logic - move dragged item to target position
+                          const newOrder = [...allAiTools];
+                          const dragIndex = newOrder.findIndex(t => t.id === draggedAiTool);
+                          const dropIndex = newOrder.findIndex(t => t.id === tool.id);
+                          if (dragIndex !== -1 && dropIndex !== -1) {
+                            const [draggedItem] = newOrder.splice(dragIndex, 1);
+                            newOrder.splice(dropIndex, 0, draggedItem);
+                            // Save the new order - only for user tools
+                            const userToolIds = newOrder.filter(t => t.isUser).map(t => t.id);
+                            localStorage.setItem("commandhub-ai-tool-order", JSON.stringify(userToolIds));
+                            // Trigger re-render
+                            setAiToolOrderVersion(v => v + 1);
+                            showActionStatus(t("orderSaved") || "排序已保存", "success");
+                          }
+                        }
+                        setDraggedAiTool(null);
+                      }}
+                    >
                       <div className="ai-tool-header">
                         <div className="ai-tool-icon">
                           {tool.icon ? (
@@ -2506,14 +2571,20 @@ function App() {
                         }} title={t("share") || "分享"}>
                           <Share2 size={14} />
                         </button>
-                        <button className="btn btn-sm ghost" onClick={() => window.open(tool.url, "_blank", "width=1200,height=800,menubar=no,toolbar=no,location=no,status=no,scrollbars=yes")}>
-                          <ExternalLink size={14} />{t("visit")}
+                        <button className="btn btn-sm ghost" onClick={() => {
+                          if (aiToolOpenMode === "external") {
+                            window.open(tool.url, "_blank", "width=1200,height=800,menubar=no,toolbar=no,location=no,status=no,scrollbars=yes");
+                          } else {
+                            window.commandHub.openExternal(tool.url);
+                          }
+                        }} title={t("visit") || "访问"}>
+                          <ExternalLink size={14} />
                         </button>
                         <button className="btn btn-sm ghost" onClick={async () => {
                           const available = await checkAiToolAvailability(tool);
                           setAiToolsStatus((prev) => ({ ...prev, [tool.id]: available }));
-                        }}>
-                          <ScanSearch size={14} />{t("check")}
+                        }} title={t("checkAvailability") || "检测可用性"}>
+                          <ScanSearch size={14} />
                         </button>
                       </div>
                     </div>

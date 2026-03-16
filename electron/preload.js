@@ -37,6 +37,7 @@ contextBridge.exposeInMainWorld("commandHub", {
   pickVideoFile: () => ipcRenderer.invoke("app:pick-video-file"),
   pickGifSavePath: () => ipcRenderer.invoke("app:pick-gif-save-path"),
   openPath: (path) => ipcRenderer.invoke("app:open-path", path),
+  openExternal: (url) => ipcRenderer.invoke("app:open-external", url),
   copyToClipboard: (text) => ipcRenderer.invoke("app:copy-to-clipboard", text),
   getPathForFile: (file) => {
     try {

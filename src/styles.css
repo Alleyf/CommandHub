@@ -2080,6 +2080,17 @@ button:disabled { cursor: not-allowed; opacity: 0.45; }
   white-space: nowrap;
 }
 
+.toolbar-stats {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+}
+
+.toolbar-stat-divider {
+  color: var(--line);
+  margin: 0 4px;
+}
+
 .search-shell {
   display: flex;
   align-items: center;
@@ -2159,11 +2170,18 @@ button:disabled { cursor: not-allowed; opacity: 0.45; }
   border: 1px solid var(--line);
   border-radius: 16px;
   padding: 16px;
-  transition: border-color 0.2s, transform 0.2s;
+  transition: border-color 0.2s, transform 0.2s, opacity 0.2s;
+  cursor: grab;
 }
 
 .ai-tool-card:hover {
   border-color: var(--muted);
+}
+
+.ai-tool-card.dragging {
+  opacity: 0.5;
+  transform: scale(0.98);
+  cursor: grabbing;
 }
 
 .ai-tool-card.available {
