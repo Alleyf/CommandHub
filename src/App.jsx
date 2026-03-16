@@ -21,7 +21,6 @@ import {
   getVirtualSlice
 } from "./process-utils";
 import { COMMAND_TEMPLATES } from "./command-templates";
-import ParticleCommandStage from "./ParticleCommandStage";
 import ProductivityHub from "./ProductivityHub";
 import {
   AlertTriangle,
@@ -33,7 +32,6 @@ import {
   Download,
   FolderSearch,
   Layers3,
-  LayoutList,
   Logs,
   Orbit,
   Pencil,
@@ -247,17 +245,23 @@ function App() {
     setCommands(state.commands);
     setStatuses(state.statuses);
     setUsageStats(state.usageStats || { counts: {}, lastUsed: {} });
-    setSettings((current) => ({
-      compactList: true,
-      quietMode: false,
-      errorReminder: true,
-      themeMode: "system",
-      particleMode: false,
-      gestureMode: false,
-      onboardingCompleted: false,
-      ...current,
-      ...state.settings
-    }));
+    setSettings((current) => {
+      const merged = {
+        compactList: true,
+        quietMode: false,
+        errorReminder: true,
+        themeMode: "system",
+        particleMode: false,
+        gestureMode: false,
+        onboardingCompleted: false,
+        ...current,
+        ...state.settings
+      };
+      // 强制禁用粒子模式和手势模式
+      merged.particleMode = false;
+      merged.gestureMode = false;
+      return merged;
+    });
     setSelectedId((current) => current || state.commands[0]?.id || "");
     setOnboardingOpen(!state.settings?.onboardingCompleted);
     })().finally(() => {
@@ -1268,14 +1272,6 @@ function App() {
                   </div>
                   <div className="inventory-actions">
                     <div className="section-copy right-copy">{t("listSummary")}</div>
-                    <div className="detail-header-actions">
-                      <button className={`btn btn-sm ghost ${!effectiveParticleMode ? "active-chip" : ""}`} onClick={() => saveSetting("particleMode", false)}>
-                        <LayoutList size={14} />{t("commandTab")}
-                      </button>
-                      <button className={`btn btn-sm ghost ${effectiveParticleMode ? "active-chip" : ""}`} onClick={() => saveSetting("particleMode", true)}>
-                        <Orbit size={14} />{t("particleStageTitle")}
-                      </button>
-                    </div>
                     <div className="toolbar-buttons compact-actions">
                       <button className="btn btn-sm primary" onClick={openCreate}><Plus size={14} />{t("newCommand")}</button>
                       <button className="btn btn-sm ghost" onClick={openEdit} disabled={!selected}><Pencil size={14} />{t("editSelected")}</button>
@@ -1284,7 +1280,7 @@ function App() {
                   </div>
                 </div>
 
-                {settings.particleMode ? (
+                {false && settings.particleMode ? (
                   <div className="particle-panel">
                     {sortedCommands.length === 0 ? (
                       <div className="empty">{t("emptyCommands")}</div>
@@ -1822,6 +1818,7 @@ function App() {
                     <span className="switch-slider" />
                   </label>
                 </div>
+                {/*
                 <div className="pref-row">
                   <div className="pref-copy">
                     <div className="pref-title">{t("particleMode")}</div>
@@ -1847,6 +1844,7 @@ function App() {
                     <span className="switch-slider" />
                   </label>
                 </div>
+                */}
                 <div className="pref-row">
                   <div className="pref-copy">
                     <div className="pref-title">{t("checkForUpdates")}</div>

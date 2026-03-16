@@ -1,6 +1,18 @@
-﻿const { app, BrowserWindow, dialog, ipcMain, Menu, Tray, nativeImage, nativeTheme, shell } = require("electron");
+﻿const { app, BrowserWindow, dialog, ipcMain, Menu, Tray, nativeImage, nativeTheme, shell, session } = require("electron");
 const { Notification } = require("electron");
 const path = require("node:path");
+
+// 设置摄像头和麦克风权限
+app.on("browser-window-created", (event, window) => {
+  window.webContents.session.setPermissionRequestHandler((webContents, permission, callback) => {
+    const allowedPermissions = ['media', 'mediaDevices', 'camera', 'microphone', 'geolocation', 'notifications'];
+    if (allowedPermissions.includes(permission)) {
+      callback(true);
+    } else {
+      callback(false);
+    }
+  });
+});
 
 Menu.setApplicationMenu(null);
 const { autoUpdater } = require("electron-updater");
@@ -1190,7 +1202,10 @@ async function createWindow() {
     webPreferences: {
       preload: path.join(__dirname, "preload.js"),
       contextIsolation: true,
-      nodeIntegration: false
+      nodeIntegration: false,
+      // 允许访问摄像头和麦克风
+      mediaDevices: true,
+      sandbox: false
     }
   });
 
@@ -1536,6 +1551,9 @@ function setupAutoUpdater() {
 }
 
 app.whenReady().then(async () => {
+  // 设置权限检查
+  session.defaultSession.setPermissionCheckHandler(() => true);
+
   setupAutoUpdater();
   hydrateRuntime();
   saveSettings(loadSettings());
