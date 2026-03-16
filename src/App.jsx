@@ -23,31 +23,42 @@ import {
 import { COMMAND_TEMPLATES } from "./command-templates";
 import ProductivityHub from "./ProductivityHub";
 import {
+  AlertCircle,
   AlertTriangle,
   Bot,
   Boxes,
   CheckCircle2,
+  Circle,
   Cpu,
   Database,
   Download,
+  ExternalLink,
   FolderSearch,
+  Globe,
+  Info,
   Layers3,
   Logs,
   Orbit,
   Pencil,
   Play,
   Plus,
+  RefreshCw,
   RotateCcw,
+  Save,
   ScanSearch,
   Search,
   Settings2,
+  Share2,
   Sparkles,
   Square,
   ToggleLeft,
   Star,
+  Heart,
   TerminalSquare,
   Trash2,
-  Upload
+  Upload,
+  Wand2,
+  X
 } from "lucide-react";
 
 function Metric({ label, value, hint, tone }) {
@@ -138,6 +149,7 @@ function LogoMark() {
 function NavIcon({ view }) {
   if (view === "commands") return <Bot size={16} strokeWidth={2.1} />;
   if (view === "library") return <Boxes size={16} strokeWidth={2.1} />;
+  if (view === "aiTools") return <Wand2 size={16} strokeWidth={2.1} />;
   if (view === "logs") return <Logs size={16} strokeWidth={2.1} />;
   if (view === "productivity") return <Layers3 size={16} strokeWidth={2.1} />;
   return <Settings2 size={16} strokeWidth={2.1} />;
@@ -153,7 +165,105 @@ function getLibraryMeta(library) {
   if (key.includes("go")) return { icon: Orbit, tone: "library-go" };
   if (key.includes("docker")) return { icon: Boxes, tone: "library-docker" };
   if (key.includes("database")) return { icon: Database, tone: "library-db" };
+  if (key.includes("rust")) return { icon: Cpu, tone: "library-rust" };
+  if (key.includes("custom")) return { icon: Star, tone: "library-custom" };
   return { icon: FolderSearch, tone: "library-generic" };
+}
+
+// 模板分类定义
+const TEMPLATE_CATEGORIES = [
+  { value: "", label: "全部" },
+  { value: "node", label: "Node.js" },
+  { value: "python", label: "Python" },
+  { value: "java", label: "Java" },
+  { value: "go", label: "Go" },
+  { value: "rust", label: "Rust" },
+  { value: "docker", label: "Docker" },
+  { value: "database", label: "数据库" },
+  { value: "custom", label: "自定义" }
+];
+
+// 内置AI工具列表 - 使用Cravatar图标
+const DEFAULT_AI_TOOLS = [
+  { id: "chatgpt", name: "ChatGPT", url: "https://chat.openai.com", icon: "https://cn.cravatar.com/favicon/api/index.php?url=https://chat.openai.com", category: "chat", description: { "zh-CN": "OpenAI 对话模型", "en-US": "OpenAI Chat Model" } },
+  { id: "claude", name: "Claude", url: "https://claude.ai", icon: "https://cn.cravatar.com/favicon/api/index.php?url=https://claude.ai", category: "chat", description: { "zh-CN": "Anthropic 对话模型", "en-US": "Anthropic Chat Model" } },
+  { id: "gemini", name: "Gemini", url: "https://gemini.google.com", icon: "https://cn.cravatar.com/favicon/api/index.php?url=https://gemini.google.com", category: "chat", description: { "zh-CN": "Google 多模态模型", "en-US": "Google Multimodal Model" } },
+  { id: "deepseek", name: "DeepSeek", url: "https://chat.deepseek.com", icon: "https://cn.cravatar.com/favicon/api/index.php?url=https://chat.deepseek.com", category: "chat", description: { "zh-CN": "深度求索对话模型", "en-US": "DeepSeek Chat Model" } },
+  { id: "cursor", name: "Cursor", url: "https://cursor.sh", icon: "https://cn.cravatar.com/favicon/api/index.php?url=https://cursor.sh", category: "ide", description: { "zh-CN": "AI 编程编辑器", "en-US": "AI Code Editor" } },
+  { id: "windsurf", name: "Windsurf", url: "https://windsurf.com", icon: "https://cn.cravatar.com/favicon/api/index.php?url=https://windsurf.com", category: "ide", description: { "zh-CN": "Codeium AI 编辑器", "en-US": "Codeium AI Editor" } },
+  { id: "perplexity", name: "Perplexity", url: "https://www.perplexity.ai", icon: "https://cn.cravatar.com/favicon/api/index.php?url=https://www.perplexity.ai", category: "search", description: { "zh-CN": "AI 搜索引擎", "en-US": "AI Search Engine" } },
+  { id: "notion", name: "Notion AI", url: "https://notion.so", icon: "https://cn.cravatar.com/favicon/api/index.php?url=https://notion.so", category: "productivity", description: { "zh-CN": "AI 笔记工具", "en-US": "AI Note Taking" } },
+  { id: "midjourney", name: "Midjourney", url: "https://www.midjourney.com", icon: "https://cn.cravatar.com/favicon/api/index.php?url=https://www.midjourney.com", category: "image", description: { "zh-CN": "AI 图像生成", "en-US": "AI Image Generation" } },
+  { id: "dall-e", name: "DALL-E", url: "https://openai.com/dall-e-3", icon: "https://cn.cravatar.com/favicon/api/index.php?url=https://openai.com/dall-e-3", category: "image", description: { "zh-CN": "OpenAI 图像生成", "en-US": "OpenAI Image Generation" } },
+  { id: "stable-diffusion", name: "Stable Diffusion", url: "https://stability.ai", icon: "https://cn.cravatar.com/favicon/api/index.php?url=https://stability.ai", category: "image", description: { "zh-CN": "开源图像生成", "en-US": "Open Source Image Generation" } },
+  { id: "elevenlabs", name: "ElevenLabs", url: "https://elevenlabs.io", icon: "https://cn.cravatar.com/favicon/api/index.php?url=https://elevenlabs.io", category: "audio", description: { "zh-CN": "AI 语音合成", "en-US": "AI Voice Synthesis" } },
+  { id: "whisper", name: "Whisper", url: "https://openai.com/index/whisper/", icon: "https://cn.cravatar.com/favicon/api/index.php?url=https://openai.com/index/whisper/", category: "audio", description: { "zh-CN": "AI 语音识别", "en-US": "AI Speech Recognition" } },
+  { id: "suno", name: "Suno", url: "https://suno.ai", icon: "https://cn.cravatar.com/favicon/api/index.php?url=https://suno.ai", category: "audio", description: { "zh-CN": "AI 音乐生成", "en-US": "AI Music Generation" } },
+  { id: "runway", name: "Runway", url: "https://runwayml.com", icon: "https://cn.cravatar.com/favicon/api/index.php?url=https://runwayml.com", category: "video", description: { "zh-CN": "AI 视频生成", "en-US": "AI Video Generation" } },
+  { id: "kimi", name: "Kimi", url: "https://kimi.moonshot.cn", icon: "https://cn.cravatar.com/favicon/api/index.php?url=https://kimi.moonshot.cn", category: "chat", description: { "zh-CN": "月之暗面对话模型", "en-US": "Moonshot Chat Model" } },
+  { id: "tongyi", name: "通义千问", url: "https://tongyi.aliyun.com", icon: "https://cn.cravatar.com/favicon/api/index.php?url=https://tongyi.aliyun.com", category: "chat", description: { "zh-CN": "阿里云对话模型", "en-US": "Alibaba Cloud Chat Model" } },
+  { id: "yi", name: "智谱清言", url: "https://www.zhipuai.cn", icon: "https://cn.cravatar.com/favicon/api/index.php?url=https://www.zhipuai.cn", category: "chat", description: { "zh-CN": "智谱AI对话模型", "en-US": "ZhipuAI Chat Model" } },
+  { id: "coze", name: "Coze", url: "https://www.coze.com", icon: "https://cn.cravatar.com/favicon/api/index.php?url=https://www.coze.com", category: "agent", description: { "zh-CN": "字节跳动AI智能体", "en-US": "ByteDance AI Agent" } },
+  { id: "dify", name: "Dify", url: "https://dify.ai", icon: "https://cn.cravatar.com/favicon/api/index.php?url=https://dify.ai", category: "agent", description: { "zh-CN": "开源AI应用开发平台", "en-US": "Open Source AI App Platform" } },
+  { id: "langchain", name: "LangChain", url: "https://js.langchain.com", icon: "https://cn.cravatar.com/favicon/api/index.php?url=https://js.langchain.com", category: "developer", description: { "zh-CN": "AI应用开发框架", "en-US": "AI App Development Framework" } },
+  { id: "ollama", name: "Ollama", url: "https://ollama.com", icon: "https://cn.cravatar.com/favicon/api/index.php?url=https://ollama.com", category: "developer", description: { "zh-CN": "本地大模型运行", "en-US": "Local LLM Runtime" } },
+  { id: "lm-studio", name: "LM Studio", url: "https://lmstudio.ai", icon: "https://cn.cravatar.com/favicon/api/index.php?url=https://lmstudio.ai", category: "developer", description: { "zh-CN": "本地大模型管理", "en-US": "Local LLM Management" } },
+  { id: "huggingface", name: "Hugging Face", url: "https://huggingface.co", icon: "https://cn.cravatar.com/favicon/api/index.php?url=https://huggingface.co", category: "developer", description: { "zh-CN": "AI模型社区", "en-US": "AI Model Community" } },
+  { id: "replicate", name: "Replicate", url: "https://replicate.com", icon: "https://cn.cravatar.com/favicon/api/index.php?url=https://replicate.com", category: "developer", description: { "zh-CN": "云端模型运行", "en-US": "Cloud Model Runtime" } },
+  { id: "together", name: "Together AI", url: "https://together.ai", icon: "https://cn.cravatar.com/favicon/api/index.php?url=https://together.ai", category: "developer", description: { "zh-CN": "AI推理平台", "en-US": "AI Inference Platform" } },
+  { id: "anthropic", name: "Anthropic", url: "https://www.anthropic.com", icon: "https://cn.cravatar.com/favicon/api/index.php?url=https://www.anthropic.com", category: "api", description: { "zh-CN": "Claude API", "en-US": "Claude API Provider" } },
+  { id: "openai", name: "OpenAI", url: "https://openai.com", icon: "https://cn.cravatar.com/favicon/api/index.php?url=https://openai.com", category: "api", description: { "zh-CN": "GPT API", "en-US": "GPT API Provider" } },
+  { id: "azure-openai", name: "Azure OpenAI", url: "https://azure.microsoft.com/en-us/products/ai-services/openai-service", icon: "https://cn.cravatar.com/favicon/api/index.php?url=https://azure.microsoft.com/en-us/products/ai-services/openai-service", category: "api", description: { "zh-CN": "Azure OpenAI服务", "en-US": "Azure OpenAI Service" } },
+];
+
+// AI工具分类
+const AI_TOOL_CATEGORIES = [
+  { value: "", label: "全部" },
+  { value: "chat", label: "对话" },
+  { value: "ide", label: "编程" },
+  { value: "search", label: "搜索" },
+  { value: "productivity", label: "效率" },
+  { value: "image", label: "图像" },
+  { value: "audio", label: "音频" },
+  { value: "video", label: "视频" },
+  { value: "agent", label: "智能体" },
+  { value: "developer", label: "开发" },
+  { value: "api", label: "API" }
+];
+
+// 获取Favicon图标URL - 使用正确的Cravatar API
+function getFaviconUrl(url) {
+  if (!url) return "";
+  try {
+    // 标准化URL（添加协议）
+    const normalizedUrl = normalizeUrl(url);
+    // 使用正确的 Cravatar API 格式
+    return `https://cn.cravatar.com/favicon/api/index.php?url=${encodeURIComponent(normalizedUrl)}`;
+  } catch (e) {
+    return "";
+  }
+}
+
+// 标准化URL - 支持带或不带协议
+function normalizeUrl(url) {
+  if (!url) return "";
+  url = url.trim();
+  // 如果不带协议，添加 https://
+  if (!/^https?:\/\//i.test(url)) {
+    url = "https://" + url;
+  }
+  return url;
+}
+
+// 获取所有分类（包括预设和自定义）
+function getAllAiToolCategories(customCategories = []) {
+  const presetCategories = AI_TOOL_CATEGORIES.filter(c => c.value);
+  const customCategoryOptions = customCategories.map(cat => ({
+    value: cat.value,
+    label: cat.label,
+    isCustom: true
+  }));
+  return [...presetCategories, ...customCategoryOptions];
 }
 
 function App() {
@@ -171,7 +281,9 @@ function App() {
     themeMode: "system",
     particleMode: false,
     gestureMode: false,
-    onboardingCompleted: false
+    onboardingCompleted: false,
+    proxyEnabled: false,
+    proxyUrl: ""
   });
   const [systemTheme, setSystemTheme] = useState("dark");
   const [selectedId, setSelectedId] = useState("");
@@ -208,6 +320,24 @@ function App() {
   const [selectedLogId, setSelectedLogId] = useState("");
   const [templateMatches, setTemplateMatches] = useState([]);
   const [templateScanBusy, setTemplateScanBusy] = useState(false);
+  const [userTemplates, setUserTemplates] = useState([]);
+  const [templateCategoryFilter, setTemplateCategoryFilter] = useState("");
+  const [templateSearchQuery, setTemplateSearchQuery] = useState("");
+  const [aiTools, setAiTools] = useState([]);
+  const [aiToolsStatus, setAiToolsStatus] = useState({});
+  const [aiToolsChecking, setAiToolsChecking] = useState(false);
+  const [aiToolCategoryFilter, setAiToolCategoryFilter] = useState("");
+  const [aiToolSearchQuery, setAiToolSearchQuery] = useState("");
+  const [aiToolModalOpen, setAiToolModalOpen] = useState(false);
+  const [aiToolEditData, setAiToolEditData] = useState(null);
+  const [aiToolCustomCategories, setAiToolCustomCategories] = useState(() => {
+    const saved = localStorage.getItem("commandhub-ai-custom-categories");
+    return saved ? JSON.parse(saved) : [];
+  });
+  const [aiToolFavorites, setAiToolFavorites] = useState(() => {
+    const saved = localStorage.getItem("commandhub-ai-favorites");
+    return saved ? JSON.parse(saved) : [];
+  });
   const [onboardingOpen, setOnboardingOpen] = useState(false);
   const [onboardingStep, setOnboardingStep] = useState(0);
   const [onboardingTargetRect, setOnboardingTargetRect] = useState(null);
@@ -340,6 +470,328 @@ function App() {
     document.documentElement.dataset.theme = resolvedTheme;
     document.documentElement.style.colorScheme = resolvedTheme;
   }, [settings.themeMode, systemTheme]);
+
+  // Ctrl+数字键快速切换左侧菜单
+  useEffect(() => {
+    const handleKeyboardShortcut = (event) => {
+      if (!event.ctrlKey) return;
+
+      const navViews = ["commands", "library", "aiTools", "productivity", "logs", "settings", "about"];
+      const key = event.key;
+
+      // Ctrl+1-7 切换菜单
+      if (key >= "1" && key <= "7") {
+        const index = parseInt(key) - 1;
+        if (navViews[index]) {
+          setActiveView(navViews[index]);
+          if (navViews[index] === "commands") {
+            setCommandsTab("commands");
+          }
+        }
+      }
+    };
+
+    window.addEventListener("keydown", handleKeyboardShortcut);
+    return () => window.removeEventListener("keydown", handleKeyboardShortcut);
+  }, []);
+
+  // 加载用户模板
+  useEffect(() => {
+    try {
+      const saved = localStorage.getItem("commandhub-user-templates");
+      if (saved) {
+        setUserTemplates(JSON.parse(saved));
+      }
+    } catch (e) {
+      console.error("Failed to load user templates:", e);
+    }
+  }, []);
+
+  // 加载用户AI工具
+  useEffect(() => {
+    try {
+      const saved = localStorage.getItem("commandhub-ai-tools");
+      if (saved) {
+        setAiTools(JSON.parse(saved));
+      } else {
+        setAiTools([]);
+      }
+    } catch (e) {
+      console.error("Failed to load AI tools:", e);
+    }
+  }, []);
+
+  // 获取所有AI工具（内置 + 用户）
+  const allAiTools = useMemo(() => {
+    const userTools = aiTools.filter((t) => t.isUser);
+    const combined = [...DEFAULT_AI_TOOLS, ...userTools];
+
+    // 分类过滤
+    let filtered = combined;
+    if (aiToolCategoryFilter) {
+      filtered = filtered.filter((t) => t.category === aiToolCategoryFilter);
+    }
+
+    // 搜索过滤
+    if (aiToolSearchQuery) {
+      const query = aiToolSearchQuery.toLowerCase();
+      filtered = filtered.filter((t) =>
+        t.name?.toLowerCase().includes(query) ||
+        t.url?.toLowerCase().includes(query) ||
+        t.description?.[language]?.toLowerCase().includes(query)
+      );
+    }
+
+    // 收藏优先排序
+    filtered = [...filtered].sort((a, b) => {
+      const aFav = aiToolFavorites.includes(a.id);
+      const bFav = aiToolFavorites.includes(b.id);
+      if (aFav && !bFav) return -1;
+      if (!aFav && bFav) return 1;
+      return 0;
+    });
+
+    return filtered;
+  }, [aiTools, aiToolCategoryFilter, aiToolSearchQuery, language, aiToolFavorites]);
+
+  // 检测AI工具可用性
+  async function checkAiToolAvailability(tool) {
+    try {
+      const controller = new AbortController();
+      const timeoutId = setTimeout(() => controller.abort(), 5000);
+
+      const response = await fetch(tool.url, {
+        method: "HEAD",
+        mode: "no-cors",
+        signal: controller.signal
+      });
+
+      clearTimeout(timeoutId);
+      return true;
+    } catch (e) {
+      // no-cors模式下无法判断真实状态，尝试fetch
+      try {
+        const controller = new AbortController();
+        const timeoutId = setTimeout(() => controller.abort(), 5000);
+        await fetch(tool.url, { signal: controller.signal });
+        clearTimeout(timeoutId);
+        return true;
+      } catch {
+        return false;
+      }
+    }
+  }
+
+  // 批量检测所有工具 - 并发优化版
+  async function checkAllAiTools() {
+    setAiToolsChecking(true);
+    const tools = allAiTools;
+    const CONCURRENCY = 5; // 同时检测5个工具
+
+    // 分批处理，每批最多5个并发
+    for (let i = 0; i < tools.length; i += CONCURRENCY) {
+      const batch = tools.slice(i, i + CONCURRENCY);
+      const results = await Promise.all(
+        batch.map(async (tool) => {
+          const available = await checkAiToolAvailability(tool);
+          return { id: tool.id, available };
+        })
+      );
+
+      // 更新状态
+      setAiToolsStatus((prev) => {
+        const newStatus = { ...prev };
+        results.forEach(({ id, available }) => {
+          newStatus[id] = available;
+        });
+        return newStatus;
+      });
+    }
+
+    setAiToolsChecking(false);
+    showActionStatus(t("aiToolsCheckComplete") || `检测完成`);
+  }
+
+  // 一键更新所有工具图标
+  function updateAllAiToolIcons() {
+    const userTools = aiTools;
+    if (userTools.length === 0) {
+      showActionStatus(t("noUserTools") || "没有用户添加的工具", "info");
+      return;
+    }
+
+    const updated = userTools.map((tool) => {
+      if (tool.url) {
+        try {
+          return {
+            ...tool,
+            icon: getFaviconUrl(tool.url)
+          };
+        } catch (e) {
+          return tool;
+        }
+      }
+      return tool;
+    });
+
+    setAiTools(updated);
+    localStorage.setItem("commandhub-ai-tools", JSON.stringify(updated));
+    const msg = t("iconsUpdated") || "已更新 {count} 个图标";
+    showActionStatus(msg.replace("{count}", updated.length), "success");
+  }
+
+  // 添加/编辑用户AI工具
+  function saveAiTool(tool, isEdit = false) {
+    let icon = tool.icon;
+    let name = tool.name;
+
+    if (tool.url) {
+      try {
+        // 标准化URL（支持不带协议）
+        const normalizedUrl = normalizeUrl(tool.url);
+        const urlObj = new URL(normalizedUrl);
+        // 自动获取favicon - 使用Cravatar API
+        if (!icon) {
+          icon = getFaviconUrl(normalizedUrl);
+        }
+        // 自动获取名称（取域名的第一个.前面的部分）
+        if (!name) {
+          const hostname = urlObj.hostname;
+          const firstDot = hostname.indexOf(".");
+          name = firstDot > 0 ? hostname.substring(0, firstDot) : hostname;
+          // 首字母大写
+          name = name.charAt(0).toUpperCase() + name.slice(1);
+        }
+        // 保存标准化后的URL
+        tool.url = normalizedUrl;
+      } catch (e) {
+        // 保持原样
+      }
+    }
+
+    if (isEdit && tool.id) {
+      // 编辑现有工具
+      const updated = aiTools.map((t) => t.id === tool.id ? { ...t, ...tool, icon, name } : t);
+      setAiTools(updated);
+      localStorage.setItem("commandhub-ai-tools", JSON.stringify(updated));
+      showActionStatus(t("aiToolUpdated") || "AI工具已更新");
+    } else {
+      // 添加新工具
+      const newTool = {
+        ...tool,
+        icon,
+        name: name || tool.name || "AI Tool",
+        id: `user-ai-${Date.now()}`,
+        isUser: true,
+        createdAt: new Date().toISOString()
+      };
+      const updated = [...aiTools, newTool];
+      setAiTools(updated);
+      localStorage.setItem("commandhub-ai-tools", JSON.stringify(updated));
+      showActionStatus(t("aiToolAdded") || "AI工具已添加");
+    }
+    setAiToolModalOpen(false);
+    setAiToolEditData(null);
+  }
+
+  // 添加自定义分类
+  function addAiToolCustomCategory(categoryLabel) {
+    if (!categoryLabel || categoryLabel.trim() === "") return;
+    const trimmedLabel = categoryLabel.trim();
+    // 检查是否已存在
+    const exists = aiToolCustomCategories.some(
+      c => c.label === trimmedLabel || c.value === trimmedLabel.toLowerCase()
+    );
+    if (exists) {
+      showActionStatus(t("categoryExists") || "分类已存在", "warning");
+      return;
+    }
+    const newCategory = {
+      value: trimmedLabel.toLowerCase().replace(/\s+/g, "-"),
+      label: trimmedLabel
+    };
+    const updated = [...aiToolCustomCategories, newCategory];
+    setAiToolCustomCategories(updated);
+    localStorage.setItem("commandhub-ai-custom-categories", JSON.stringify(updated));
+    showActionStatus(t("categoryAdded") || "分类已添加", "success");
+  }
+
+  // 打开添加弹窗
+  function openAddAiToolModal() {
+    setAiToolEditData(null);
+    setAiToolModalOpen(true);
+  }
+
+  // 打开编辑弹窗
+  function openEditAiToolModal(tool) {
+    setAiToolEditData(tool);
+    setAiToolModalOpen(true);
+  }
+
+  // 删除用户AI工具
+  function deleteAiTool(id) {
+    const updated = aiTools.filter((t) => t.id !== id);
+    setAiTools(updated);
+    localStorage.setItem("commandhub-ai-tools", JSON.stringify(updated));
+    setAiToolsStatus((prev) => {
+      const newStatus = { ...prev };
+      delete newStatus[id];
+      return newStatus;
+    });
+    showActionStatus(t("aiToolDeleted") || "AI工具已删除");
+  }
+
+  // 切换收藏状态
+  function toggleAiToolFavorite(toolId) {
+    const isFavorited = aiToolFavorites.includes(toolId);
+    let updated;
+    if (isFavorited) {
+      updated = aiToolFavorites.filter((id) => id !== toolId);
+    } else {
+      updated = [...aiToolFavorites, toolId];
+    }
+    setAiToolFavorites(updated);
+    localStorage.setItem("commandhub-ai-favorites", JSON.stringify(updated));
+    if (isFavorited) {
+      showActionStatus(t("removedFromFavorites") || "已取消收藏", "info");
+    } else {
+      showActionStatus(t("addedToFavorites") || "已添加到收藏", "success");
+    }
+  }
+
+  // 导出AI工具
+  function exportAiTools() {
+    const data = JSON.stringify(aiTools, null, 2);
+    const blob = new Blob([data], { type: "application/json" });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement("a");
+    a.href = url;
+    a.download = `commandhub-ai-tools-${new Date().toISOString().slice(0, 10)}.json`;
+    a.click();
+    URL.revokeObjectURL(url);
+    showActionStatus(t("aiToolsExported") || "AI工具已导出");
+  }
+
+  // 导入AI工具
+  function importAiTools(event) {
+    const file = event.target.files?.[0];
+    if (!file) return;
+    const reader = new FileReader();
+    reader.onload = (e) => {
+      try {
+        const imported = JSON.parse(e.target.result);
+        if (!Array.isArray(imported)) throw new Error("Invalid format");
+        const updated = [...aiTools, ...imported];
+        setAiTools(updated);
+        localStorage.setItem("commandhub-ai-tools", JSON.stringify(updated));
+        showActionStatus(t("aiToolsImported") || `已导入 ${imported.length} 个AI工具`);
+      } catch (err) {
+        showActionStatus(t("aiToolsImportError") || "导入失败：格式错误", "error");
+      }
+    };
+    reader.readAsText(file);
+    event.target.value = "";
+  }
 
   const groups = useMemo(() => [...new Set(commands.map((item) => item.group || "").sort((a, b) => a.localeCompare(b)))], [commands]);
 
@@ -756,6 +1208,109 @@ function App() {
     setDrawerOpen(true);
   }
 
+  // 保存为用户模板
+  function saveAsTemplate(command) {
+    const template = {
+      id: `user-${uid()}`,
+      name: command.name,
+      command: command.command,
+      args: command.args || "",
+      cwd: command.cwd || "",
+      envText: command.envText || "",
+      group: command.group || "custom",
+      description: {
+        [language]: `${command.name} - ${command.command}`
+      },
+      isUserTemplate: true,
+      createdAt: new Date().toISOString()
+    };
+    const updated = [...userTemplates, template];
+    setUserTemplates(updated);
+    localStorage.setItem("commandhub-user-templates", JSON.stringify(updated));
+    showActionStatus(t("templateSaved") || "已保存为模板");
+  }
+
+  // 删除用户模板
+  function deleteUserTemplate(id) {
+    const updated = userTemplates.filter((t) => t.id !== id);
+    setUserTemplates(updated);
+    localStorage.setItem("commandhub-user-templates", JSON.stringify(updated));
+    showActionStatus(t("templateDeleted") || "模板已删除");
+  }
+
+  // 导出用户模板
+  function exportUserTemplates() {
+    const data = JSON.stringify(userTemplates, null, 2);
+    const blob = new Blob([data], { type: "application/json" });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement("a");
+    a.href = url;
+    a.download = `commandhub-templates-${new Date().toISOString().slice(0, 10)}.json`;
+    a.click();
+    URL.revokeObjectURL(url);
+    showActionStatus(t("templateExportSuccess") || "模板已导出");
+  }
+
+  // 导入模板
+  function importUserTemplates(event) {
+    const file = event.target.files?.[0];
+    if (!file) return;
+    const reader = new FileReader();
+    reader.onload = (e) => {
+      try {
+        const imported = JSON.parse(e.target.result);
+        if (!Array.isArray(imported)) throw new Error("Invalid format");
+        const updated = imported.map((t) => ({
+          ...t,
+          id: `user-${uid()}`,
+          isUserTemplate: true,
+          createdAt: new Date().toISOString()
+        }));
+        const merged = [...userTemplates, ...updated];
+        setUserTemplates(merged);
+        localStorage.setItem("commandhub-user-templates", JSON.stringify(merged));
+        showActionStatus(t("templateImportSuccess") || `已导入 ${updated.length} 个模板`);
+      } catch (err) {
+        showActionStatus(t("templateImportError") || "导入失败: 格式错误", "error");
+      }
+    };
+    reader.readAsText(file);
+    event.target.value = "";
+  }
+
+  // 获取所有模板（内置 + 用户）
+  const allTemplates = useMemo(() => {
+    let templates = [...COMMAND_TEMPLATES, ...userTemplates];
+
+    // 分类过滤
+    if (templateCategoryFilter) {
+      templates = templates.filter((t) => (t.group || t.library || "").toLowerCase().includes(templateCategoryFilter.toLowerCase()));
+    }
+
+    // 搜索过滤
+    if (templateSearchQuery) {
+      const query = templateSearchQuery.toLowerCase();
+      templates = templates.filter((t) =>
+        t.name?.toLowerCase().includes(query) ||
+        t.command?.toLowerCase().includes(query) ||
+        t.group?.toLowerCase().includes(query) ||
+        t.description?.[language]?.toLowerCase().includes(query)
+      );
+    }
+
+    return templates;
+  }, [userTemplates, templateCategoryFilter, templateSearchQuery, language]);
+
+  // 获取用户模板分类
+  const userTemplateCategories = useMemo(() => {
+    const cats = new Set(userTemplates.map((t) => t.group || "custom"));
+    return TEMPLATE_CATEGORIES.map((c) => {
+      if (c.value === "custom" && cats.has("custom")) return { ...c, hasData: true };
+      if (c.value && cats.has(c.value)) return { ...c, hasData: true };
+      return c;
+    });
+  }, [userTemplates]);
+
   async function exportGlobalLogs() {
     try {
       const result = await window.commandHub.exportGlobalLogs({
@@ -932,7 +1487,7 @@ function App() {
       ]
     : [];
 
-  const navItems = [["commands", t("navCommands")], ["library", t("navLibrary")], ["productivity", t("navProductivity")], ["logs", t("navLogs")], ["settings", t("navSettings")], ["about", t("navAbout")]];
+  const navItems = [["commands", t("navCommands")], ["library", t("navLibrary")], ["aiTools", t("navAiTools")], ["productivity", t("navProductivity")], ["logs", t("navLogs")], ["settings", t("navSettings")], ["about", t("navAbout")]];
   const stateOptions = [["", t("allStates")], ["running", t("stateRunning")], ["stopped", t("stateStopped")], ["error", t("stateError")]];
   const stateSelectOptions = stateOptions.map(([value, label]) => ({ value, label }));
   const groupFilterOptions = [{ value: "", label: t("allGroups") }, ...groups.map((group) => ({ value: group, label: group || t("noGroup") }))];
@@ -1115,9 +1670,10 @@ function App() {
         <p className="lede">{t("lede")}</p>
 
         <div className="nav-stack">
-          {navItems.map(([id, label]) => (
-            <button key={id} className={`btn btn-md nav-button ${activeView === id ? "active" : ""}`} onClick={() => setActiveView(id)}>
+          {navItems.map(([id, label], index) => (
+            <button key={id} className={`btn btn-md nav-button ${activeView === id ? "active" : ""}`} onClick={() => setActiveView(id)} title={`Ctrl+${index + 1}`}>
               <span className="nav-button-inner"><NavIcon view={id} />{label}</span>
+              <span className="nav-shortcut">Ctrl+{index + 1}</span>
             </button>
           ))}
         </div>
@@ -1148,8 +1704,17 @@ function App() {
           </div>
         )}
         {actionStatus.message && (
-          <div className={`card status-banner ${actionStatus.type === "error" ? "status-banner-error" : ""}`}>
-            {actionStatus.message}
+          <div className={`toast-notification toast-${actionStatus.type || "success"}`}>
+            <div className="toast-icon">
+              {actionStatus.type === "error" ? <XCircle size={18} /> :
+               actionStatus.type === "warning" ? <AlertTriangle size={18} /> :
+               actionStatus.type === "info" ? <Info size={18} /> :
+               <CheckCircle2 size={18} />}
+            </div>
+            <div className="toast-message">{actionStatus.message}</div>
+            <button className="toast-close" onClick={() => setActionStatus({ message: "", type: "" })}>
+              <X size={14} />
+            </button>
           </div>
         )}
         {activeView === "commands" && (
@@ -1707,23 +2272,79 @@ function App() {
                   <Sparkles size={16} />
                   <span>{t("scanEnvironmentDesc")}</span>
                 </div>
+
+                {/* 模板筛选和操作栏 */}
+                <div className="template-toolbar">
+                  <div className="template-filters">
+                    <SelectField
+                      value={templateCategoryFilter}
+                      options={userTemplateCategories}
+                      onChange={setTemplateCategoryFilter}
+                      placeholder={t("allCategories") || "全部分类"}
+                      compact
+                    />
+                    <div className="search-shell">
+                      <Search size={14} />
+                      <input
+                        type="text"
+                        placeholder={t("searchTemplates") || "搜索模板..."}
+                        value={templateSearchQuery}
+                        onChange={(e) => setTemplateSearchQuery(e.target.value)}
+                      />
+                    </div>
+                  </div>
+                  <div className="template-actions">
+                    {userTemplates.length > 0 && (
+                      <>
+                        <button className="btn btn-sm ghost" onClick={exportUserTemplates} title={t("exportTemplates") || "导出我的模板"}>
+                          <Download size={14} />{t("exportTemplates") || "导出"}
+                        </button>
+                        <label className="btn btn-sm ghost" title={t("importTemplates") || "导入模板"}>
+                          <Upload size={14} />{t("importTemplates") || "导入"}
+                          <input type="file" accept=".json" onChange={importUserTemplates} style={{ display: "none" }} />
+                        </label>
+                      </>
+                    )}
+                    <button className="btn btn-sm primary" onClick={scanTemplateLibraries} disabled={templateScanBusy}>
+                      <ScanSearch size={14} />{t("scanEnvironment")}
+                    </button>
+                  </div>
+                </div>
+
+                {/* 用户模板提示 */}
+                {userTemplates.length > 0 && (
+                  <div className="user-templates-banner">
+                    <Star size={14} />
+                    <span>{t("myTemplates") || "我的模板"}: {userTemplates.length}</span>
+                  </div>
+                )}
+
                 <div className="template-grid">
-                  {(templateMatches.length > 0 ? templateMatches : COMMAND_TEMPLATES).map((template) => {
+                  {(templateMatches.length > 0 ? templateMatches : allTemplates).map((template) => {
                     const meta = getLibraryMeta(template.library || template.group);
                     const LibraryIcon = meta.icon;
+                    const isUser = template.isUserTemplate;
                     return (
-                      <div key={`${template.id}-${template.detectedPath || "library"}`} className={`template-card ${meta.tone}`}>
+                      <div key={`${template.id}-${template.detectedPath || "library"}`} className={`template-card ${meta.tone} ${isUser ? "user-template" : ""}`}>
                         <div className="template-card-top">
                           <div className="template-library-pill">
                             <LibraryIcon size={15} />
                             <span>{template.library || template.group || "Template"}</span>
+                            {isUser && <span className="user-badge">Mine</span>}
                           </div>
                           {template.detectedPath && <span className="template-path mono">{template.detectedPath}</span>}
                         </div>
                         <div className="template-card-title">{template.name}</div>
                         <div className="section-copy">{template.description?.[language] || template.description?.["zh-CN"] || ""}</div>
                         <pre className="command-preview template-preview">{[template.command, template.args].filter(Boolean).join(" ")}</pre>
-                        <button className="btn btn-sm ghost strong-ghost" onClick={() => applyTemplate(template)}><Plus size={14} />{t("useTemplate")}</button>
+                        <div className="template-card-actions">
+                          {isUser && (
+                            <button className="btn btn-sm ghost danger" onClick={() => deleteUserTemplate(template.id)} title={t("deleteTemplate") || "删除"}>
+                              <Trash2 size={14} />
+                            </button>
+                          )}
+                          <button className="btn btn-sm ghost strong-ghost" onClick={() => applyTemplate(template)}><Plus size={14} />{t("useTemplate")}</button>
+                        </div>
                       </div>
                     );
                   })}
@@ -1767,6 +2388,248 @@ function App() {
           </section>
         )}
 
+        {activeView === "aiTools" && (
+          <section className="single-panel">
+            <div className="card panel-card" style={{ height: '100%', display: 'flex', flexDirection: 'column' }}>
+              <div className="split-head">
+                <div>
+                  <div className="section-title section-title-with-icon"><Wand2 size={14} />{t("aiToolsTitle")}</div>
+                  <div className="section-copy">{t("aiToolsDesc")}</div>
+                </div>
+              </div>
+
+              {/* 工具栏 + 统计 */}
+              <div className="template-toolbar" style={{ marginTop: '12px', marginBottom: '16px' }}>
+                <div className="template-filters">
+                  <SelectField
+                    value={aiToolCategoryFilter}
+                    options={[{ value: "", label: t("allCategories") || "全部分类" }, ...getAllAiToolCategories(aiToolCustomCategories)]}
+                    onChange={setAiToolCategoryFilter}
+                    placeholder={t("allCategories") || "全部分类"}
+                    compact
+                  />
+                  <div className="search-shell">
+                    <Search size={14} />
+                    <input
+                      type="text"
+                      placeholder={t("searchAiTools") || "搜索AI工具..."}
+                      value={aiToolSearchQuery}
+                      onChange={(e) => setAiToolSearchQuery(e.target.value)}
+                    />
+                  </div>
+                </div>
+                <div className="toolbar-buttons">
+                  <span className="toolbar-stat">{t("totalAiTools")}: {allAiTools.length}</span>
+                  <button className="btn btn-sm primary" onClick={openAddAiToolModal} title={t("addAiTool") || "添加AI工具"}>
+                    <Plus size={14} />
+                  </button>
+                  <button className="btn btn-sm primary" onClick={checkAllAiTools} disabled={aiToolsChecking} title={aiToolsChecking ? (t("checking") || "检测中...") : (t("checkAvailability") || "检测可用性")}>
+                    <ScanSearch size={14} />
+                  </button>
+                  <button className="btn btn-sm ghost" onClick={updateAllAiToolIcons} title={t("updateAllIcons") || "一键更新图标"}>
+                    <RefreshCw size={14} />
+                  </button>
+                  <button className="btn btn-sm ghost" onClick={exportAiTools} title={t("exportAiTools") || "导出"}><Download size={14} /></button>
+                  <label className="btn btn-sm ghost" title={t("importAiTools") || "导入"}>
+                    <Upload size={14} />
+                    <input type="file" accept=".json" onChange={importAiTools} style={{ display: "none" }} />
+                  </label>
+                </div>
+              </div>
+
+              {/* 用户工具提示 */}
+              {aiTools.length > 0 && (
+                <div className="user-templates-banner">
+                  <Star size={14} />
+                  <span>{t("myAiTools") || "我的工具"}: {aiTools.length}</span>
+                </div>
+              )}
+
+              <div className="ai-tools-grid" style={{ flex: 1, overflow: 'auto' }}>
+                {allAiTools.map((tool) => {
+                  const status = aiToolsStatus[tool.id];
+                  const isChecking = aiToolsChecking && status === undefined;
+                  return (
+                    <div key={tool.id} className={`ai-tool-card ${status === true ? "available" : status === false ? "unavailable" : ""}`}>
+                      <div className="ai-tool-header">
+                        <div className="ai-tool-icon">
+                          {tool.icon ? (
+                            <img src={tool.icon} alt={tool.name} onError={(e) => { e.target.style.display = 'none'; e.target.nextSibling.style.display = 'flex'; }} />
+                          ) : null}
+                          <div className="ai-tool-icon-fallback" style={{ display: tool.icon ? 'none' : 'flex' }}>
+                            <Globe size={20} />
+                          </div>
+                        </div>
+                        <div className="ai-tool-info">
+                          <div className="ai-tool-name">{tool.name}</div>
+                          <div className="ai-tool-category">{getAllAiToolCategories(aiToolCustomCategories).find(c => c.value === tool.category)?.label || tool.category}</div>
+                        </div>
+                        <button
+                          className={`btn btn-sm ghost favorite-btn ${aiToolFavorites.includes(tool.id) ? "favorited" : ""}`}
+                          onClick={() => toggleAiToolFavorite(tool.id)}
+                          title={aiToolFavorites.includes(tool.id) ? (t("removeFromFavorites") || "取消收藏") : (t("addToFavorites") || "添加收藏")}
+                        >
+                          <Heart size={14} fill={aiToolFavorites.includes(tool.id) ? "currentColor" : "none"} />
+                        </button>
+                        {tool.isUser && <span className="user-badge">Mine</span>}
+                      </div>
+                      <div className="ai-tool-desc">{tool.description?.[language] || tool.description?.["zh-CN"] || ""}</div>
+                      <div className="ai-tool-status">
+                        {isChecking ? (
+                          <span className="status-checking"><Circle size={12} className="spin" />{t("checking") || "检测中..."}</span>
+                        ) : status === true ? (
+                          <span className="status-available"><CheckCircle2 size={12} />{t("available") || "可用"}</span>
+                        ) : status === false ? (
+                          <span className="status-unavailable"><X size={12} />{t("unavailable") || "不可用"}</span>
+                        ) : (
+                          <span className="status-unchecked">{t("notChecked") || "未检测"}</span>
+                        )}
+                      </div>
+                      <div className="ai-tool-actions">
+                        {tool.isUser && (
+                          <>
+                            <button className="btn btn-sm ghost" onClick={() => openEditAiToolModal(tool)} title={t("edit") || "编辑"}>
+                              <Pencil size={14} />
+                            </button>
+                            <button className="btn btn-sm ghost danger" onClick={() => deleteAiTool(tool.id)} title={t("delete") || "删除"}>
+                              <Trash2 size={14} />
+                            </button>
+                          </>
+                        )}
+                        <button className="btn btn-sm ghost" onClick={async () => {
+                          try {
+                            await window.commandHub.copyToClipboard(tool.url);
+                            showActionStatus(t("urlCopied") || "链接已复制", "success");
+                          } catch (err) {
+                            showActionStatus(t("copyFailed") || "复制失败", "error");
+                          }
+                        }} title={t("share") || "分享"}>
+                          <Share2 size={14} />
+                        </button>
+                        <button className="btn btn-sm ghost" onClick={() => window.open(tool.url, "_blank", "width=1200,height=800,menubar=no,toolbar=no,location=no,status=no,scrollbars=yes")}>
+                          <ExternalLink size={14} />{t("visit")}
+                        </button>
+                        <button className="btn btn-sm ghost" onClick={async () => {
+                          const available = await checkAiToolAvailability(tool);
+                          setAiToolsStatus((prev) => ({ ...prev, [tool.id]: available }));
+                        }}>
+                          <ScanSearch size={14} />{t("check")}
+                        </button>
+                      </div>
+                    </div>
+                  );
+                })}
+              </div>
+            </div>
+          </section>
+        )}
+
+        {/* AI工具添加/编辑弹窗 */}
+        {aiToolModalOpen && (
+          <div className="modal-backdrop open" onClick={() => { setAiToolModalOpen(false); setAiToolEditData(null); }}>
+            <div className="modal" onClick={(e) => e.stopPropagation()}>
+              <div className="modal-head">
+                <h3>{aiToolEditData ? t("editAiTool") || "编辑AI工具" : t("addAiTool") || "添加AI工具"}</h3>
+                <button className="btn btn-sm ghost" onClick={() => { setAiToolModalOpen(false); setAiToolEditData(null); }}><X size={18} /></button>
+              </div>
+              <form className="modal-body" onSubmit={(e) => {
+                e.preventDefault();
+                const form = e.target;
+                let category = form.category.value;
+                // 如果选择了"添加新分类"
+                if (category === "__new__") {
+                  const newCatName = form.newCategory.value.trim();
+                  if (!newCatName) {
+                    showActionStatus(t("enterCategoryName") || "请输入分类名称", "warning");
+                    return;
+                  }
+                  // 添加新分类
+                  addAiToolCustomCategory(newCatName);
+                  category = newCatName.toLowerCase().replace(/\s+/g, "-");
+                }
+                saveAiTool({
+                  id: aiToolEditData?.id,
+                  name: form.name.value,
+                  url: form.url.value,
+                  icon: form.icon.value,
+                  category: category || "chat",
+                  description: { [language]: form.desc.value },
+                  isUser: true
+                }, !!aiToolEditData);
+              }}
+              onChange={(e) => {
+                // 显示/隐藏新分类输入框
+                if (e.target.name === "category") {
+                  const newCatInput = e.target.closest("form").querySelector(".new-category-input");
+                  if (newCatInput) {
+                    newCatInput.style.display = e.target.value === "__new__" ? "block" : "none";
+                  }
+                }
+              }}>
+                <label className="form-field">
+                  <span>{t("toolName")} (可选)</span>
+                  <input name="name" placeholder="留空自动从域名提取" defaultValue={aiToolEditData?.name || ""} />
+                </label>
+                <label className="form-field">
+                  <span>{t("toolUrl")} *</span>
+                  <input name="url" required placeholder="https://chat.openai.com" defaultValue={aiToolEditData?.url || ""} />
+                </label>
+                <label className="form-field">
+                  <span>{t("toolIcon")}</span>
+                  <div style={{ display: 'flex', gap: '8px', alignItems: 'center' }}>
+                    <input name="icon" placeholder="留空自动从域名获取" defaultValue={aiToolEditData?.icon || ""} style={{ flex: 1 }} />
+                    <button
+                      type="button"
+                      className="btn btn-sm ghost"
+                      onClick={() => {
+                        const form = document.querySelector('.modal form');
+                        const url = form.url.value;
+                        if (url) {
+                          try {
+                            form.icon.value = getFaviconUrl(url);
+                          } catch (e) {
+                            showActionStatus(t("invalidUrl") || "请输入有效的网址", "warning");
+                          }
+                        } else {
+                          showActionStatus(t("enterUrlFirst") || "请先输入网址", "warning");
+                        }
+                      }}
+                      title={t("fetchIcon") || "自动获取图标"}
+                    >
+                      <RefreshCw size={14} />
+                    </button>
+                  </div>
+                </label>
+                <label className="form-field">
+                  <span>{t("toolCategory")}</span>
+                  <div style={{ display: 'flex', gap: '8px', alignItems: 'center' }}>
+                    <select name="category" defaultValue={aiToolEditData?.category || "chat"} style={{ flex: 1 }}>
+                      {getAllAiToolCategories(aiToolCustomCategories).map((cat) => (
+                        <option key={cat.value} value={cat.value}>{cat.label}</option>
+                      ))}
+                      <option value="__new__">{t("addNewCategory") || "+ 添加新分类"}</option>
+                    </select>
+                  </div>
+                  <input
+                    name="newCategory"
+                    placeholder={t("enterNewCategory") || "输入新分类名称..."}
+                    style={{ marginTop: '8px', display: 'none' }}
+                    className="new-category-input"
+                  />
+                </label>
+                <label className="form-field">
+                  <span>{t("toolDesc")}</span>
+                  <input name="desc" placeholder={t("description") || "描述..."} defaultValue={aiToolEditData?.description?.[language] || ""} />
+                </label>
+                <div className="modal-actions">
+                  <button type="button" className="btn btn-md secondary" onClick={() => { setAiToolModalOpen(false); setAiToolEditData(null); }}>{t("cancel")}</button>
+                  <button type="submit" className="btn btn-md primary">{t("save") || "保存"}</button>
+                </div>
+              </form>
+            </div>
+          </div>
+        )}
+
         {activeView === "productivity" && (
           <ProductivityHub active={activeView === "productivity"} t={t} onToast={showActionStatus} />
         )}
@@ -1776,129 +2639,166 @@ function App() {
             <div className="card panel-card settings-panel">
               <div className="section-title">{t("settings")}</div>
               <div className="section-copy">{t("settingsDesc")}</div>
-              <div className="section-copy">{t("selectFileFixHint")}</div>
-              <div className="prefs-list">
-                <div className="pref-row">
-                  <div className="pref-copy">
-                    <div className="pref-title">{t("closeToTray")}</div>
-                    <div className="pref-help">{t("settingsDesc")}</div>
+
+              {/* 通用设置 */}
+              <div className="settings-section">
+                <div className="settings-section-title"><Settings2 size={16} />{t("generalSettings") || "通用设置"}</div>
+                <div className="prefs-list">
+                  <div className="pref-row">
+                    <div className="pref-copy">
+                      <div className="pref-title">{t("themeMode")}</div>
+                      <div className="pref-help">{t("themeModeHelp")}</div>
+                    </div>
+                    <div className="pref-control">
+                      <SelectField value={settings.themeMode || "system"} options={themeModeOptions} onChange={(value) => saveSetting("themeMode", value)} placeholder={t("themeMode")} />
+                    </div>
                   </div>
-                  <label className="switch">
-                    <input type="checkbox" checked={Boolean(settings.closeToTray)} onChange={(event) => saveSetting("closeToTray", event.target.checked)} />
-                    <span className="switch-slider" />
-                  </label>
-                </div>
-                <div className="pref-row">
-                  <div className="pref-copy">
-                    <div className="pref-title">{t("launchAtLogin")}</div>
-                    <div className="pref-help">{t("silentModeDesc")}</div>
-                  </div>
-                  <label className="switch">
-                    <input type="checkbox" checked={Boolean(settings.launchAtLogin)} onChange={(event) => saveSetting("launchAtLogin", event.target.checked)} />
-                    <span className="switch-slider" />
-                  </label>
-                </div>
-                <div className="pref-row">
-                  <div className="pref-copy">
-                    <div className="pref-title">{t("themeMode")}</div>
-                    <div className="pref-help">{t("themeModeHelp")}</div>
-                  </div>
-                  <div className="pref-control">
-                    <SelectField value={settings.themeMode || "system"} options={themeModeOptions} onChange={(value) => saveSetting("themeMode", value)} placeholder={t("themeMode")} />
+                  <div className="pref-row">
+                    <div className="pref-copy">
+                      <div className="pref-title">{t("language")}</div>
+                      <div className="pref-help">{t("selectFileFixHint")}</div>
+                    </div>
+                    <div className="pref-control">
+                      <SelectField value={language} options={languageOptions} onChange={(value) => saveSetting("language", value)} placeholder={t("language")} />
+                    </div>
                   </div>
                 </div>
-                <div className="pref-row">
-                  <div className="pref-copy">
-                    <div className="pref-title">{t("language")}</div>
-                    <div className="pref-help">{t("selectFileFixHint")}</div>
+              </div>
+
+              {/* 系统设置 */}
+              <div className="settings-section">
+                <div className="settings-section-title"><Cpu size={16} />{t("systemSettings") || "系统设置"}</div>
+                <div className="prefs-list">
+                  <div className="pref-row">
+                    <div className="pref-copy">
+                      <div className="pref-title">{t("closeToTray")}</div>
+                      <div className="pref-help">{t("settingsDesc")}</div>
+                    </div>
+                    <label className="switch">
+                      <input type="checkbox" checked={Boolean(settings.closeToTray)} onChange={(event) => saveSetting("closeToTray", event.target.checked)} />
+                      <span className="switch-slider" />
+                    </label>
                   </div>
-                  <div className="pref-control">
-                    <SelectField value={language} options={languageOptions} onChange={(value) => saveSetting("language", value)} placeholder={t("language")} />
+                  <div className="pref-row">
+                    <div className="pref-copy">
+                      <div className="pref-title">{t("launchAtLogin")}</div>
+                      <div className="pref-help">{t("silentModeDesc")}</div>
+                    </div>
+                    <label className="switch">
+                      <input type="checkbox" checked={Boolean(settings.launchAtLogin)} onChange={(event) => saveSetting("launchAtLogin", event.target.checked)} />
+                      <span className="switch-slider" />
+                    </label>
                   </div>
                 </div>
-                <div className="pref-row">
-                  <div className="pref-copy">
-                    <div className="pref-title">{t("logMode")}</div>
-                    <div className="pref-help">{t("logModeHelp")}</div>
+              </div>
+
+              {/* 界面设置 */}
+              <div className="settings-section">
+                <div className="settings-section-title"><Layers3 size={16} />{t("uiSettings") || "界面设置"}</div>
+                <div className="prefs-list">
+                  <div className="pref-row">
+                    <div className="pref-copy">
+                      <div className="pref-title">{t("compactList")}</div>
+                      <div className="pref-help">{t("compactListDesc")}</div>
+                    </div>
+                    <label className="switch">
+                      <input type="checkbox" checked={Boolean(settings.compactList)} onChange={(event) => saveSetting("compactList", event.target.checked)} />
+                      <span className="switch-slider" />
+                    </label>
                   </div>
-                  <div className="pref-control">
-                    <SelectField value={settings.logMode || "overwrite"} options={logModeOptions} onChange={(value) => saveSetting("logMode", value)} placeholder={t("logMode")} />
+                  <div className="pref-row">
+                    <div className="pref-copy">
+                      <div className="pref-title">{t("logMode")}</div>
+                      <div className="pref-help">{t("logModeHelp")}</div>
+                    </div>
+                    <div className="pref-control">
+                      <SelectField value={settings.logMode || "overwrite"} options={logModeOptions} onChange={(value) => saveSetting("logMode", value)} placeholder={t("logMode")} />
+                    </div>
                   </div>
                 </div>
-                <div className="pref-row">
-                  <div className="pref-copy">
-                    <div className="pref-title">{t("quietMode")}</div>
-                    <div className="pref-help">{t("quietModeDesc")}</div>
+              </div>
+
+              {/* 通知设置 */}
+              <div className="settings-section">
+                <div className="settings-section-title"><AlertTriangle size={16} />{t("notificationSettings") || "通知设置"}</div>
+                <div className="prefs-list">
+                  <div className="pref-row">
+                    <div className="pref-copy">
+                      <div className="pref-title">{t("quietMode")}</div>
+                      <div className="pref-help">{t("quietModeDesc")}</div>
+                    </div>
+                    <label className="switch">
+                      <input type="checkbox" checked={Boolean(settings.quietMode)} onChange={(event) => saveSetting("quietMode", event.target.checked)} />
+                      <span className="switch-slider" />
+                    </label>
                   </div>
-                  <label className="switch">
-                    <input type="checkbox" checked={Boolean(settings.quietMode)} onChange={(event) => saveSetting("quietMode", event.target.checked)} />
-                    <span className="switch-slider" />
-                  </label>
+                  <div className="pref-row">
+                    <div className="pref-copy">
+                      <div className="pref-title">{t("errorReminder")}</div>
+                      <div className="pref-help">{t("errorReminderDesc")}</div>
+                    </div>
+                    <label className="switch">
+                      <input type="checkbox" checked={Boolean(settings.errorReminder)} onChange={(event) => saveSetting("errorReminder", event.target.checked)} />
+                      <span className="switch-slider" />
+                    </label>
+                  </div>
                 </div>
-                <div className="pref-row">
-                  <div className="pref-copy">
-                    <div className="pref-title">{t("errorReminder")}</div>
-                    <div className="pref-help">{t("errorReminderDesc")}</div>
+              </div>
+
+              {/* 代理设置 */}
+              <div className="settings-section">
+                <div className="settings-section-title"><Globe size={16} />{t("proxySettings") || "代理设置"}</div>
+                <div className="prefs-list">
+                  <div className="pref-row">
+                    <div className="pref-copy">
+                      <div className="pref-title">{t("proxyEnabled") || "启用代理"}</div>
+                      <div className="pref-help">{t("proxyEnabledDesc") || "用于AI工具可用性检测"}</div>
+                    </div>
+                    <label className="switch">
+                      <input type="checkbox" checked={Boolean(settings.proxyEnabled)} onChange={(event) => saveSetting("proxyEnabled", event.target.checked)} />
+                      <span className="switch-slider" />
+                    </label>
                   </div>
-                  <label className="switch">
-                    <input type="checkbox" checked={Boolean(settings.errorReminder)} onChange={(event) => saveSetting("errorReminder", event.target.checked)} />
-                    <span className="switch-slider" />
-                  </label>
+                  {settings.proxyEnabled && (
+                    <div className="pref-row pref-row-input">
+                      <div className="pref-copy">
+                        <div className="pref-title">{t("proxyUrl") || "代理地址"}</div>
+                        <div className="pref-help">{t("proxyUrlDesc") || "格式: 协议://主机:端口 (如 http://127.0.0.1:7890)"}</div>
+                      </div>
+                      <input
+                        className="pref-input"
+                        type="text"
+                        value={settings.proxyUrl || ""}
+                        onChange={(event) => saveSetting("proxyUrl", event.target.value)}
+                        placeholder="http://127.0.0.1:7890"
+                      />
+                    </div>
+                  )}
                 </div>
-                <div className="pref-row">
-                  <div className="pref-copy">
-                    <div className="pref-title">{t("compactList")}</div>
-                    <div className="pref-help">{t("compactListDesc")}</div>
+              </div>
+
+              {/* 关于 */}
+              <div className="settings-section">
+                <div className="settings-section-title"><Bot size={16} />{t("aboutSettings") || "关于"}</div>
+                <div className="prefs-list">
+                  <div className="pref-row">
+                    <div className="pref-copy">
+                      <div className="pref-title">{t("checkForUpdates")}</div>
+                      <div className="pref-help">{updateStatus.message || t("settingsDesc")}</div>
+                    </div>
+                    <button className={`btn btn-md ${updateStatus.type === "error" ? "danger" : "ghost"}`} onClick={handleCheckForUpdates} disabled={updateStatus.checking}>
+                      {updateStatus.checking ? t("checkingForUpdates") : t("checkForUpdates")}
+                    </button>
                   </div>
-                  <label className="switch">
-                    <input type="checkbox" checked={Boolean(settings.compactList)} onChange={(event) => saveSetting("compactList", event.target.checked)} />
-                    <span className="switch-slider" />
-                  </label>
-                </div>
-                {/*
-                <div className="pref-row">
-                  <div className="pref-copy">
-                    <div className="pref-title">{t("particleMode")}</div>
-                    <div className="pref-help">{t("particleModeDesc")}</div>
+                  <div className="pref-row">
+                    <div className="pref-copy">
+                      <div className="pref-title">{t("onboardingTitle")}</div>
+                      <div className="pref-help">{t("onboardingSubtitle")}</div>
+                    </div>
+                    <button className="btn btn-md ghost" onClick={reopenOnboarding}>
+                      {t("reopenOnboarding")}
+                    </button>
                   </div>
-                  <label className="switch">
-                    <input type="checkbox" checked={Boolean(settings.particleMode)} onChange={(event) => saveSetting("particleMode", event.target.checked)} />
-                    <span className="switch-slider" />
-                  </label>
-                </div>
-                <div className="pref-row">
-                  <div className="pref-copy">
-                    <div className="pref-title">{t("gestureMode")}</div>
-                    <div className="pref-help">{t("gestureModeDesc")}</div>
-                  </div>
-                  <label className="switch">
-                    <input
-                      type="checkbox"
-                      checked={effectiveGestureMode}
-                      disabled={!effectiveParticleMode}
-                      onChange={(event) => saveSetting("gestureMode", event.target.checked)}
-                    />
-                    <span className="switch-slider" />
-                  </label>
-                </div>
-                */}
-                <div className="pref-row">
-                  <div className="pref-copy">
-                    <div className="pref-title">{t("checkForUpdates")}</div>
-                    <div className="pref-help">{updateStatus.message || t("settingsDesc")}</div>
-                  </div>
-                  <button className={`btn btn-md ${updateStatus.type === "error" ? "danger" : "ghost"}`} onClick={handleCheckForUpdates} disabled={updateStatus.checking}>
-                    {updateStatus.checking ? t("checkingForUpdates") : t("checkForUpdates")}
-                  </button>
-                </div>
-                <div className="pref-row">
-                  <div className="pref-copy">
-                    <div className="pref-title">{t("onboardingTitle")}</div>
-                    <div className="pref-help">{t("onboardingSubtitle")}</div>
-                  </div>
-                  <button className="btn btn-md ghost" onClick={reopenOnboarding}>
-                    {t("reopenOnboarding")}
-                  </button>
                 </div>
               </div>
             </div>
@@ -2222,6 +3122,9 @@ function App() {
             </label>
           </div>
           <div className="drawer-actions">
+            <button type="button" className="btn btn-md ghost" onClick={() => saveAsTemplate(form)} title={t("saveAsTemplate") || "保存为模板"}>
+              <Save size={14} />{t("saveAsTemplate") || "保存为模板"}
+            </button>
             <button type="button" className="btn btn-md secondary" onClick={() => setDrawerOpen(false)}>{t("cancel")}</button>
             <button type="submit" className="btn btn-lg primary">{t("saveCommand")}</button>
           </div>

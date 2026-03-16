@@ -1,4 +1,4 @@
-﻿const { app, BrowserWindow, dialog, ipcMain, Menu, Tray, nativeImage, nativeTheme, shell, session } = require("electron");
+﻿const { app, BrowserWindow, dialog, ipcMain, Menu, Tray, nativeImage, nativeTheme, shell, session, clipboard } = require("electron");
 const { Notification } = require("electron");
 const path = require("node:path");
 
@@ -1191,6 +1191,8 @@ async function stopAllCommands(group) {
 
 async function createWindow() {
   applyThemeMode(loadSettings().themeMode);
+
+  // 先创建空白窗口，立即显示背景
   mainWindow = new BrowserWindow({
     width: 1520,
     height: 920,
@@ -1199,6 +1201,7 @@ async function createWindow() {
     icon: getWindowIconPath(),
     titleBarStyle: process.platform === "darwin" ? "hiddenInset" : "default",
     backgroundColor: "#071118",
+    show: true, // 立即显示，使用背景色
     webPreferences: {
       preload: path.join(__dirname, "preload.js"),
       contextIsolation: true,
@@ -1209,18 +1212,19 @@ async function createWindow() {
     }
   });
 
+  // 在后台加载内容
+  if (isDev) {
+    loadRendererWithRetry(mainWindow, "http://127.0.0.1:5173");
+  } else {
+    mainWindow.loadFile(path.join(__dirname, "..", "dist", "index.html"));
+  }
+
   mainWindow.on("close", (event) => {
     const settings = loadSettings();
     if (forceQuit || !settings.closeToTray) return;
     event.preventDefault();
     mainWindow.hide();
   });
-
-  if (isDev) {
-    await loadRendererWithRetry(mainWindow, "http://127.0.0.1:5173");
-    return;
-  }
-  await mainWindow.loadFile(path.join(__dirname, "..", "dist", "index.html"));
 }
 
 async function loadRendererWithRetry(window, url, attempts = 12) {
@@ -1500,6 +1504,14 @@ safeHandle("app:archive-files", async (_event, payload) => await productivityToo
 safeHandle("app:convert-video-to-gif", async (_event, payload) => await productivityTools.convertVideoToGif(payload || {}));
 safeHandle("app:scan-ports", async (_event, payload) => await productivityTools.scanPorts(payload || {}));
 safeHandle("app:release-port", async (_event, payload) => await productivityTools.releasePort(payload || {}));
+safeHandle("app:copy-to-clipboard", async (_event, text) => {
+  try {
+    clipboard.writeText(text);
+    return { ok: true };
+  } catch (error) {
+    return { ok: false, error: String(error.message || error) };
+  }
+});
 
 function setupAutoUpdater() {
   // 设置 GitHub 更新源 - 使用完整 URL
@@ -1593,7 +1605,12 @@ function setupAutoUpdater() {
     console.error("[AutoUpdate] Error:", err);
   });
 
-  autoUpdater.checkForUpdates();
+  // 延迟5秒后检查更新，避免阻塞应用启动
+  setTimeout(() => {
+    if (!isDev) {
+      autoUpdater.checkForUpdates();
+    }
+  }, 5000);
 }
 
 app.whenReady().then(async () => {

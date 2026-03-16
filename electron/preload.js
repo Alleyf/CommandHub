@@ -1,4 +1,4 @@
-const { contextBridge, ipcRenderer, webUtils } = require("electron");
+const { contextBridge, ipcRenderer, webUtils, clipboard } = require("electron");
 
 contextBridge.exposeInMainWorld("commandHub", {
   getState: () => ipcRenderer.invoke("app:get-state"),
@@ -37,6 +37,7 @@ contextBridge.exposeInMainWorld("commandHub", {
   pickVideoFile: () => ipcRenderer.invoke("app:pick-video-file"),
   pickGifSavePath: () => ipcRenderer.invoke("app:pick-gif-save-path"),
   openPath: (path) => ipcRenderer.invoke("app:open-path", path),
+  copyToClipboard: (text) => ipcRenderer.invoke("app:copy-to-clipboard", text),
   getPathForFile: (file) => {
     try {
       return webUtils.getPathForFile(file);
