@@ -1502,17 +1502,45 @@ function setupAutoUpdater() {
     return;
   }
 
-  autoUpdater.autoDownload = true;
+  // 不自动下载，等待用户确认
+  autoUpdater.autoDownload = false;
   autoUpdater.autoInstallOnAppQuit = true;
 
   autoUpdater.on("checking-for-update", () => {
     console.log("[AutoUpdate] Checking for updates...");
   });
 
-  autoUpdater.on("update-available", (info) => {
+  autoUpdater.on("update-available", async (info) => {
     console.log("[AutoUpdate] Update available:", info.version);
-    if (mainWindow && !mainWindow.isDestroyed()) {
-      mainWindow.webContents.send("update:available", info);
+
+    // 等待窗口创建完成
+    if (!mainWindow || mainWindow.isDestroyed()) {
+      console.log("[AutoUpdate] Window not ready, skipping prompt");
+      return;
+    }
+
+    // 询问用户是否要下载更新
+    const choice = dialog.showMessageBox(mainWindow, {
+      type: "info",
+      title: "发现新版本",
+      message: `发现新版本 v${info.version}，是否下载更新？`,
+      detail: `当前版本: ${app.getVersion()}\n新版本: ${info.version}`,
+      buttons: ["下载更新", "稍后再说"],
+      defaultId: 0,
+      cancelId: 1
+    });
+
+    const { response } = choice;
+
+    if (response === 0) {
+      // 用户选择下载更新
+      console.log("[AutoUpdate] User confirmed, starting download...");
+      if (mainWindow && !mainWindow.isDestroyed()) {
+        mainWindow.webContents.send("update:downloading", info);
+      }
+      autoUpdater.downloadUpdate();
+    } else {
+      console.log("[AutoUpdate] User declined update");
     }
   });
 
@@ -1525,16 +1553,24 @@ function setupAutoUpdater() {
 
   autoUpdater.on("update-downloaded", (info) => {
     console.log("[AutoUpdate] Update downloaded:", info.version);
+
     if (mainWindow && !mainWindow.isDestroyed()) {
       mainWindow.webContents.send("update:downloaded", info);
     }
-    const choice = dialog.showMessageBoxSync(mainWindow, {
+
+    const choice = dialog.showMessageBox(mainWindow, {
       type: "info",
-      title: "Update Ready",
-      message: "A new version has been downloaded. Restart now to apply?",
-      buttons: ["Restart Now", "Later"]
+      title: "更新已下载",
+      message: "新版本已下载完成，是否立即重启应用？",
+      detail: "重启后将自动应用更新",
+      buttons: ["立即重启", "稍后重启"],
+      defaultId: 0,
+      cancelId: 1
     });
-    if (choice === 0) {
+
+    const { response } = choice;
+
+    if (response === 0) {
       autoUpdater.quitAndInstall();
     }
   });
