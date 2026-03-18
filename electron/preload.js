@@ -39,6 +39,7 @@ contextBridge.exposeInMainWorld("commandHub", {
   openPath: (path) => ipcRenderer.invoke("app:open-path", path),
   openExternal: (url) => ipcRenderer.invoke("app:open-external", url),
   copyToClipboard: (text) => ipcRenderer.invoke("app:copy-to-clipboard", text),
+  getVersion: () => ipcRenderer.invoke("app:get-version"),
   getPathForFile: (file) => {
     try {
       return webUtils.getPathForFile(file);
@@ -57,7 +58,7 @@ contextBridge.exposeInMainWorld("commandHub", {
     return () => ipcRenderer.removeListener("update:progress", handler);
   },
   onUpdateDownloaded: (callback) => {
-    const handler = () => callback();
+    const handler = (_event, info) => callback(info);
     ipcRenderer.on("update:downloaded", handler);
     return () => ipcRenderer.removeListener("update:downloaded", handler);
   }

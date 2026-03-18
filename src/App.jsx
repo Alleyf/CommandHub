@@ -344,6 +344,7 @@ function App() {
   });
   const [draggedAiTool, setDraggedAiTool] = useState(null);
   const [aiToolOrderVersion, setAiToolOrderVersion] = useState(0);
+  const [appVersion, setAppVersion] = useState("");
   const [onboardingOpen, setOnboardingOpen] = useState(false);
   const [onboardingStep, setOnboardingStep] = useState(0);
   const [onboardingTargetRect, setOnboardingTargetRect] = useState(null);
@@ -432,6 +433,8 @@ function App() {
 
   useEffect(() => {
     refreshState();
+    // 加载应用版本号
+    window.commandHub.getVersion().then((v) => setAppVersion(v)).catch(() => {});
     const disposeRuntime = window.commandHub.onRuntimeUpdated(refreshState);
 
     // 监听更新事件
@@ -1358,10 +1361,17 @@ function App() {
     try {
       const result = await window.commandHub.checkForUpdates();
       if (result.ok) {
-        setTimeout(() => {
-          setUpdateStatus({ checking: false, message: t("noUpdatesAvailable"), type: "success" });
-          setTimeout(() => setUpdateStatus({ checking: false, message: "", type: "" }), 3000);
-        }, 500);
+        const remoteVersion = result.updateInfo?.version;
+        const hasNewVersion = remoteVersion && remoteVersion !== result.currentVersion;
+        if (hasNewVersion) {
+          setUpdateStatus({ checking: false, message: t("updateAvailable", { version: remoteVersion }), type: "info" });
+          setTimeout(() => setUpdateStatus({ checking: false, message: "", type: "" }), 5000);
+        } else {
+          setTimeout(() => {
+            setUpdateStatus({ checking: false, message: t("noUpdatesAvailable"), type: "success" });
+            setTimeout(() => setUpdateStatus({ checking: false, message: "", type: "" }), 3000);
+          }, 500);
+        }
       } else {
         setUpdateStatus({ checking: false, message: t("checkUpdateError", { error: result.error }), type: "error" });
         setTimeout(() => setUpdateStatus({ checking: false, message: "", type: "" }), 5000);
@@ -2905,7 +2915,7 @@ function App() {
                   </svg>
                   <div>
                     <div style={{ fontWeight: 600, fontSize: '20px' }}>CommandHub</div>
-                    <div style={{ fontSize: '14px', opacity: 0.7 }}>版本 0.4.7</div>
+                    <div style={{ fontSize: '14px', opacity: 0.7 }}>版本 {appVersion || "..."}</div>
                   </div>
                 </div>
 

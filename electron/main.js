@@ -62,6 +62,7 @@ const {
   getStoreDir,
   getCommandsFile,
   getSettingsFile,
+  getLogsDir,
   readJson,
   writeJson,
   loadCommands,
@@ -74,6 +75,7 @@ const {
   recordUsage,
   getLogPath,
   clearLogFile,
+  deleteLogFile,
   readLogTail,
   appendOperationLog,
   clearOperationLog,
@@ -779,7 +781,7 @@ function extractLaunchResult(text) {
   return { pid: NaN, shellPid: NaN };
 }
 
-async function startCommand(command) {
+async function startCommand(command, options = {}) {
   const currentRuntime = loadRuntime();
   const settings = loadSettings();
   const existingRuntime = currentRuntime[command.id];
@@ -801,9 +803,9 @@ async function startCommand(command) {
     });
   }
 
-  const logPath = getLogPath(command.id);
+  let logPath = getLogPath(command.id);
   const logMode = settings.logMode === "append" ? "append" : "overwrite";
-  if (logMode === "overwrite") {
+  if (logMode === "overwrite" && !options.skipLogClear) {
     let cleared = false;
     for (let attempt = 0; attempt < 5; attempt += 1) {
       if (clearLogFile(logPath)) {
@@ -813,30 +815,19 @@ async function startCommand(command) {
       await sleepMs(300);
     }
     if (!cleared) {
-      const hint = "日志文件正被占用，请稍等几秒后重试。";
-      console.warn(`Giving up on clearing log file for ${command.id} after 5 attempts.`);
-      updateCommand(command.id, () => ({
-        lastExitCode: null,
-        lastStoppedAt: nowIso(),
-        updatedAt: nowIso(),
-        lastState: "error",
-        lastHint: hint
-      }));
+      // 旧日志文件被占用，创建新的日志文件，避免启动被阻塞
+      console.warn(`Log file busy for ${command.id}, using new log file.`);
+      const newLogPath = getLogPath(`${command.id}-${Date.now()}`);
       logEvent({
         category: "command",
-        level: "error",
-        title: "Command start blocked",
-        summary: `${command.name} could not clear its log file before launch.`,
+        level: "warning",
+        title: "Log file busy, using new file",
+        summary: `${command.name} log file was locked, created new log: ${newLogPath}`,
         commandId: command.id,
         commandName: command.name,
-        details: { logPath }
+        details: { oldLogPath: logPath, newLogPath }
       });
-      return createStatus({
-        state: "error",
-        message: "Log file is busy and could not be cleared. Please try again in a few seconds.",
-        logPath,
-        hint
-      });
+      logPath = newLogPath;
     }
   }
   let child = null;
@@ -1055,6 +1046,12 @@ async function stopCommand(id) {
   await terminateProcess(data.pid);
   await waitForPidExit(data.pid);
 
+  // 终止 shell 父进程 (cmd.exe)，释放日志文件句柄
+  if (data.shellPid && data.shellPid !== data.pid) {
+    await terminateProcess(data.shellPid);
+    await waitForPidExit(data.shellPid);
+  }
+
   if (process.platform === "win32") {
     await sleepMs(400);
   }
@@ -1085,6 +1082,21 @@ async function stopCommand(id) {
     commandName: command?.name || "",
     details: { pid: data.pid, logPath: data.logPath || "" }
   });
+
+  // 延迟清理该命令的临时日志文件 (形如 {commandId}-{timestamp}.log)
+  setTimeout(() => {
+    try {
+      const logsDir = getLogsDir();
+      const prefix = `${id}-`;
+      if (fs.existsSync(logsDir)) {
+        fs.readdirSync(logsDir)
+          .filter((f) => f.startsWith(prefix) && f.endsWith(".log"))
+          .forEach((f) => deleteLogFile(path.join(logsDir, f)));
+      }
+    } catch (err) {
+      console.warn(`Failed to cleanup temp log files for ${id}:`, err.message);
+    }
+  }, 3000);
 
   refreshTrayMenu();
   refreshMatchedProcessCache(true).then(() => updateRenderer()).catch(() => {});
@@ -1273,9 +1285,13 @@ safeHandle("app:save-command", async (_event, payload) => {
 });
 safeHandle("app:delete-command", async (_event, id) => {
   const command = loadCommands().find((item) => item.id === id);
+  const logPathToDelete = getLogPath(id);
   await stopCommand(id);
   const commands = loadCommands().filter((item) => item.id !== id);
   saveCommands(commands);
+  // 等待文件句柄释放后清理日志文件
+  await sleepMs(1000);
+  deleteLogFile(logPathToDelete);
   logEvent({
     category: "operation",
     level: "info",
@@ -1300,6 +1316,8 @@ safeHandle("app:stop-command", async (_event, id) => {
 });
 safeHandle("app:restart-command", async (_event, command) => {
   await stopCommand(command.id);
+  // 等待文件句柄释放
+  await sleepMs(800);
   const status = await startCommand(command);
   updateRenderer();
   return status;
@@ -1308,20 +1326,33 @@ safeHandle("app:start-all", async (_event, group) => await startAllCommands(grou
 safeHandle("app:stop-all", async (_event, group) => await stopAllCommands(group));
 safeHandle("app:get-log-tail", async (_event, logPath) => readLogTail(logPath));
 safeHandle("app:clear-log", async (_event, logPath) => {
-  clearLogFile(logPath);
-  logEvent({
-    category: "operation",
-    level: "info",
-    title: "Command log cleared",
-    summary: `Cleared command output log at ${logPath}.`,
-    details: { logPath }
-  });
-  return { ok: true };
+  // 重试清除日志文件，防止文件被占用
+  let cleared = false;
+  for (let attempt = 0; attempt < 5; attempt += 1) {
+    if (clearLogFile(logPath)) {
+      cleared = true;
+      break;
+    }
+    await sleepMs(500);
+  }
+  if (cleared) {
+    logEvent({
+      category: "operation",
+      level: "info",
+      title: "Command log cleared",
+      summary: `Cleared command output log at ${logPath}.`,
+      details: { logPath }
+    });
+  }
+  return { ok: cleared };
 });
 
 safeHandle("app:open-log-folder", async () => {
   await shell.openPath(path.join(getStoreDir(), "logs"));
   return { ok: true };
+});
+safeHandle("app:get-version", async () => {
+  return app.getVersion();
 });
 safeHandle("app:save-settings", async (_event, payload) => {
   const settings = saveSettings(payload);
@@ -1482,8 +1513,10 @@ safeHandle("app:check-for-updates", async () => {
 
     const result = await autoUpdater.checkForUpdates();
     const info = result?.updateInfo || null;
+    const currentVersion = app.getVersion();
     return {
       ok: true,
+      currentVersion,
       updateInfo: info ? {
         version: String(info.version || ""),
         releaseDate: info.releaseDate || null,
@@ -1547,7 +1580,7 @@ function setupAutoUpdater() {
     }
 
     // 询问用户是否要下载更新
-    const choice = dialog.showMessageBox(mainWindow, {
+    const { response } = await dialog.showMessageBox(mainWindow, {
       type: "info",
       title: "发现新版本",
       message: `发现新版本 v${info.version}，是否下载更新？`,
@@ -1556,8 +1589,6 @@ function setupAutoUpdater() {
       defaultId: 0,
       cancelId: 1
     });
-
-    const { response } = choice;
 
     if (response === 0) {
       // 用户选择下载更新
@@ -1578,14 +1609,14 @@ function setupAutoUpdater() {
     }
   });
 
-  autoUpdater.on("update-downloaded", (info) => {
+  autoUpdater.on("update-downloaded", async (info) => {
     console.log("[AutoUpdate] Update downloaded:", info.version);
 
     if (mainWindow && !mainWindow.isDestroyed()) {
       mainWindow.webContents.send("update:downloaded", info);
     }
 
-    const choice = dialog.showMessageBox(mainWindow, {
+    const { response } = await dialog.showMessageBox(mainWindow, {
       type: "info",
       title: "更新已下载",
       message: "新版本已下载完成，是否立即重启应用？",
@@ -1594,8 +1625,6 @@ function setupAutoUpdater() {
       defaultId: 0,
       cancelId: 1
     });
-
-    const { response } = choice;
 
     if (response === 0) {
       autoUpdater.quitAndInstall();

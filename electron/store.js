@@ -115,11 +115,30 @@ function createStore(getUserDataPath) {
       fs.writeFileSync(logPath, "", "utf8");
       return true;
     } catch (error) {
-      if (error.code === "EBUSY") {
-        console.warn(`Could not clear log file (busy): ${logPath}`);
+      if (error.code === "EBUSY" || error.code === "EPERM") {
+        console.warn(`Could not clear log file (busy/permission): ${logPath}`);
         return false;
       }
+      // 文件不存在时视为成功
+      if (error.code === "ENOENT") {
+        return true;
+      }
       throw error;
+    }
+  }
+
+  function deleteLogFile(logPath) {
+    if (!logPath) return;
+    try {
+      if (fs.existsSync(logPath)) {
+        fs.unlinkSync(logPath);
+      }
+    } catch (error) {
+      if (error.code === "EBUSY" || error.code === "EPERM") {
+        console.warn(`Could not delete log file (busy/permission): ${logPath}`);
+      } else if (error.code !== "ENOENT") {
+        console.warn(`Could not delete log file: ${logPath}`, error.message);
+      }
     }
   }
 
@@ -230,6 +249,7 @@ function createStore(getUserDataPath) {
     saveRuntime,
     getLogPath,
     clearLogFile,
+    deleteLogFile,
     readLogTail,
     loadOperationLog,
     saveOperationLog,
